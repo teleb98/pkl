@@ -4,8 +4,31 @@
    Capacitor(iPad/Android 태블릿): 파일 선택 후 IndexedDB 캐시에 저장
 */
 import { cachePdf, deleteCachedPdf } from './pdfCache.js';
+import { getBookMeta } from '../store.js';
 
 const LOCAL_INDEX_KEY = 'pkl_local_books';
+
+/** 로컬 책 → 서재 표시용 book 객체 (Drive 책과 동일 형태 — 그리드/피처드/상세 모달 공용) */
+export function localBookToBook(lb) {
+  const meta = getBookMeta(lb.id) || {};
+  return {
+    id: lb.id,
+    title: lb.title,
+    source: 'local',
+    filePath: lb.filePath,
+    status: meta.status || 'unread',
+    progress: meta.progress || 0,
+    lastPage: meta.lastPage || 0,
+    pages: meta.pages || 0,
+    highlights: meta.highlights || 0,
+    notes: meta.notes || 0,
+    bookmarks: meta.bookmarks || 0,
+    webViewLink: null,
+    modifiedTime: new Date(lb.addedAt || Date.now()).toISOString(),
+    size: lb.size,
+    mimeType: 'application/pdf',
+  };
+}
 
 /** Electron 데스크톱 환경 여부 */
 export const isElectron = () => !!window.electron;

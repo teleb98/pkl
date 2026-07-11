@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { BOOKS, i18n } from '../data.js';
+import { i18n } from '../data.js';
 import { useTheme } from '../context.jsx';
 import { ProgressBar, Button, SectionLabel, Icon, ChipRow, SyncBadge, ScreenHeader } from '../components.jsx';
 import { getBookMeta, setBookMeta, saveBookIndex, getReadQueue, addToQueue, removeFromQueue, moveQueueItem, getNotesByBook, getHighlightsByBook, getCollections, getCollectionsByBook } from '../store.js';
@@ -8,7 +8,7 @@ import { scanLocalBookMeta } from '../utils/localBookScan.js';
 import { printNotesAsPdf, downloadNotesAsMarkdown } from '../utils/exportNotes.js';
 import { BookCollectionPicker, CollectionManager } from '../components/CollectionManager.jsx';
 import { ShareModal } from '../components/ShareModal.jsx';
-import { getLocalBooks, addLocalBook, addLocalBooksNative, removeLocalBook, fmtFileSize, usesNativePicker, onElectronMenuOpenPdf, reloadLocalBookFromPath } from '../utils/localBooks.js';
+import { getLocalBooks, addLocalBook, addLocalBooksNative, removeLocalBook, localBookToBook, usesNativePicker, onElectronMenuOpenPdf, reloadLocalBookFromPath } from '../utils/localBooks.js';
 
 /* ── Color palette for Drive book covers ─────────────────── */
 const PALETTE = [
@@ -150,7 +150,7 @@ function MobileAuthErrorOrRetry({ isAuthErr, error, lang, onRetry, onAuthError }
 const TYPE_LABELS_M = { '소설': { ko: '소설', en: 'Novel' }, novel: { ko: '소설', en: 'Novel' }, '기술서': { ko: '기술서', en: 'Technical' }, technical: { ko: '기술서', en: 'Technical' }, 'self-help': { ko: '자기계발', en: 'Self-help' }, '자기계발': { ko: '자기계발', en: 'Self-help' }, paper: { ko: '논문', en: 'Paper' }, '논문': { ko: '논문', en: 'Paper' }, 'work-doc': { ko: '업무문서', en: 'Work doc' }, '업무문서': { ko: '업무문서', en: 'Work doc' }, essay: { ko: '에세이', en: 'Essay' }, '에세이': { ko: '에세이', en: 'Essay' } };
 const LANG_LABELS_M = { ko: { ko: '한국어', en: 'Korean' }, en: { ko: '영어', en: 'English' }, ja: { ko: '일본어', en: 'Japanese' }, zh: { ko: '중국어', en: 'Chinese' } };
 
-function BookDetailSheet({ book, lang, geminiKey, claudeKey, accessToken, onClose, onRead, onAI, onMetaChange, onAuthError, onQueueChange, onCollectionsChange }) {
+function BookDetailSheet({ book, lang, geminiKey, claudeKey, accessToken, onClose, onRead, onAI, onMetaChange, onAuthError, onQueueChange, onCollectionsChange, onRemoveLocal }) {
   const { T, F } = useTheme();
   const ko = lang === 'ko';
   const [inQueue, setInQueue] = useState(() => getReadQueue().some(b => b.id === book.id));
@@ -479,6 +479,19 @@ function BookDetailSheet({ book, lang, geminiKey, claudeKey, accessToken, onClos
             <button onClick={() => setShowShare(true)} style={{ flex: 1, fontSize: 12, color: T.inkLight, background: 'none', border: `1px solid ${T.border}`, borderRadius: 8, padding: '8px', cursor: 'pointer', fontFamily: F.body, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}>
               <Icon name="send" size={12} /> {ko ? '공유' : 'Share'}
             </button>
+            {isLocal && (
+              <button
+                onClick={async () => {
+                  if (!window.confirm(ko ? '이 책을 기기에서 제거할까요?' : 'Remove this book from your device?')) return;
+                  await removeLocalBook(book.id);
+                  onRemoveLocal?.();
+                  onClose();
+                }}
+                style={{ flex: 1, fontSize: 12, color: '#C0392B', background: 'none', border: '1px solid #C0392B44', borderRadius: 8, padding: '8px', cursor: 'pointer', fontFamily: F.body, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}
+              >
+                × {ko ? '기기에서 제거' : 'Remove'}
+              </button>
+            )}
           </div>
           {showShare && <ShareModal book={book} lang={lang} onClose={() => setShowShare(false)} />}
         </div>
@@ -502,7 +515,7 @@ function BookDetailSheet({ book, lang, geminiKey, claudeKey, accessToken, onClos
 /* ── Main component ──────────────────────────────────────── */
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
-export function LibraryScreen({ lang, setScreen, openDriveSave, userConfig, onAddBook, onOpenBook, onAuthError }) {
+export function LibraryScreen({ lang, setScreen, userConfig, onAddBook, onOpenBook, onAuthError }) {
   const { T, F } = useTheme();
   const t = i18n[lang];
 
@@ -652,43 +665,12 @@ export function LibraryScreen({ lang, setScreen, openDriveSave, userConfig, onAd
           </label>
         )}
       </div>
-      {localBooks.length === 0 ? (
-        <div style={{ fontSize: 12, color: T.inkLight, fontFamily: F.body, padding: '8px 0 12px', lineHeight: 1.6 }}>
-          {lang === 'ko'
-            ? '기기의 PDF 파일을 추가하면 오프라인에서도 읽을 수 있습니다.'
-            : 'Add PDFs from your device to read them offline.'}
-        </div>
-      ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 14 }}>
-          {localBooks.map(lb => (
-            <div
-              key={lb.id}
-              style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', background: T.surface, borderRadius: 12, border: `1px solid ${T.border}`, cursor: 'pointer' }}
-              onClick={() => onOpenBook && onOpenBook(lb)}
-            >
-              <div style={{ width: 32, height: 40, borderRadius: 4, background: T.accent, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: 14 }}>📄</div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 13, fontWeight: 600, color: T.ink, fontFamily: F.body, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{lb.title}</div>
-                <div style={{ fontSize: 10, color: T.inkLight, fontFamily: F.mono, marginTop: 2 }}>
-                  {fmtFileSize(lb.size)} · ⚡ {lang === 'ko' ? '캐시됨' : 'Cached'}
-                </div>
-              </div>
-              <button
-                onClick={async (e) => {
-                  e.stopPropagation();
-                  await removeLocalBook(lb.id);
-                  setLocalBooks(getLocalBooks());
-                }}
-                style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px 6px', color: T.inkLight, fontSize: 16, flexShrink: 0 }}
-              >
-                ×
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
     </div>
   );
+
+  // 로컬 책도 Drive 책과 동일한 book 형태로 그리드/피처드에 표시
+  const localAsBooks = useMemo(() => localBooks.map(localBookToBook), [localBooks, bookTick]); // eslint-disable-line
+  const allBooks = useMemo(() => [...localAsBooks, ...books], [localAsBooks, books]);
 
   const filterOpts = [
     { key: 'all',       label: lang === 'ko' ? '전체' : 'All' },
@@ -697,16 +679,11 @@ export function LibraryScreen({ lang, setScreen, openDriveSave, userConfig, onAd
     { key: 'unread',    label: lang === 'ko' ? '미열람' : 'Unread' },
   ];
 
-  let filtered = filter === 'all' ? books : books.filter(b => b.status === filter);
+  let filtered = filter === 'all' ? allBooks : allBooks.filter(b => b.status === filter);
   if (collectionFilter) {
     const sel = collections.find(c => c.id === collectionFilter);
     const ids = new Set(sel?.bookIds || []);
     filtered = filtered.filter(b => ids.has(b.id));
-  }
-
-  /* ── No Drive configured: show concept demo ── */
-  if (!hasConfig) {
-    return <ConceptLibrary lang={lang} setScreen={setScreen} openDriveSave={openDriveSave} onAddBook={onAddBook} onOpenBook={onOpenBook} localSection={localSection} />;
   }
 
   /* ── Loading ── */
@@ -743,10 +720,10 @@ export function LibraryScreen({ lang, setScreen, openDriveSave, userConfig, onAd
   }
 
   /* ── Empty state ── */
-  if (books.length === 0) {
+  if (allBooks.length === 0) {
     return (
       <div style={{ paddingBottom: 24 }}>
-        <ScreenHeader subtitle={driveFolder.name} title={lang === 'ko' ? '서재' : 'Library'} right={<SyncBadge lang={lang} />} />
+        <ScreenHeader subtitle={hasConfig ? driveFolder.name : (lang === 'ko' ? '내 서재' : 'My library')} title={lang === 'ko' ? '서재' : 'Library'} right={hasConfig ? <SyncBadge lang={lang} /> : undefined} />
         {localSection}
         <div style={{ padding: '40px 22px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16 }}>
           <div style={{ width: 72, height: 72, borderRadius: 20, background: T.accentSoft, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -757,35 +734,41 @@ export function LibraryScreen({ lang, setScreen, openDriveSave, userConfig, onAd
               {lang === 'ko' ? '서재가 비어 있어요' : 'Your library is empty'}
             </div>
             <div style={{ fontSize: 13, color: T.inkLight, fontFamily: F.body, lineHeight: 1.65, maxWidth: 260 }}>
-              {lang === 'ko'
-                ? `📁 ${driveFolder.name} 폴더에 PDF를 추가하면 여기에 나타납니다.`
-                : `Add PDFs to 📁 ${driveFolder.name} in Google Drive to see them here.`}
+              {hasConfig
+                ? (lang === 'ko'
+                    ? `📁 ${driveFolder.name} 폴더에 PDF를 추가하면 여기에 나타납니다.`
+                    : `Add PDFs to 📁 ${driveFolder.name} in Google Drive to see them here.`)
+                : (lang === 'ko'
+                    ? '기기의 PDF 파일을 추가해 나만의 서재를 시작하세요.'
+                    : 'Add a PDF from your device to start your library.')}
             </div>
           </div>
           <Button variant="accent" onClick={onAddBook} style={{ padding: '12px 24px' }}>
             <Icon name="library" size={14} color="#FFF" /> {lang === 'ko' ? '첫 책 추가하기' : 'Add first book'}
           </Button>
-          <button onClick={load} style={{ background: 'none', border: 'none', color: T.inkLight, fontSize: 12, fontFamily: F.body, cursor: 'pointer', textDecoration: 'underline' }}>
-            {lang === 'ko' ? '새로 고침' : 'Refresh'}
-          </button>
+          {hasConfig && (
+            <button onClick={load} style={{ background: 'none', border: 'none', color: T.inkLight, fontSize: 12, fontFamily: F.body, cursor: 'pointer', textDecoration: 'underline' }}>
+              {lang === 'ko' ? '새로 고침' : 'Refresh'}
+            </button>
+          )}
         </div>
       </div>
     );
   }
 
   /* ── Library with books ── */
-  const featured = books.find(b => b.status === 'reading') || books[0];
+  const featured = allBooks.find(b => b.status === 'reading') || allBooks[0];
 
   return (
     <div style={{ paddingBottom: 24 }}>
       <ScreenHeader
-        subtitle={driveFolder.name}
+        subtitle={hasConfig ? driveFolder.name : (lang === 'ko' ? '내 서재' : 'My library')}
         title={lang === 'ko' ? '서재' : 'Library'}
-        right={
+        right={hasConfig ? (
           <button onClick={load} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.inkLight, display: 'flex', padding: 4 }}>
             <Icon name="sync" size={16} color={T.inkLight} />
           </button>
-        }
+        ) : undefined}
       />
 
       {localSection}
@@ -981,6 +964,7 @@ export function LibraryScreen({ lang, setScreen, openDriveSave, userConfig, onAd
           onAuthError={onAuthError}
           onQueueChange={q => setReadQueue([...q])}
           onCollectionsChange={() => setCollections(getCollections())}
+          onRemoveLocal={() => { setLocalBooks(getLocalBooks()); setDetailBook(null); }}
         />
       )}
 
@@ -1018,102 +1002,3 @@ export function LibraryScreen({ lang, setScreen, openDriveSave, userConfig, onAd
 }
 
 /* ── Concept demo (no Drive configured) ─────────────────── */
-function ConceptLibrary({ lang, setScreen, openDriveSave, onAddBook, onOpenBook, localSection }) {
-  const { T, F } = useTheme();
-  const t = i18n[lang];
-  const [filter, setFilter] = useState('all');
-  const filterOpts = [
-    { key: 'all', label: t.allBooks }, { key: 'reading', label: t.reading },
-    { key: 'completed', label: t.completed }, { key: 'unread', label: t.unread },
-  ];
-  const filtered = filter === 'all' ? BOOKS : BOOKS.filter(b => b.status === filter);
-  const featured = BOOKS[0];
-
-  return (
-    <div style={{ paddingBottom: 24 }}>
-      {/* Demo mode banner */}
-      <div style={{ background: T.accentSoft, borderBottom: `1px solid ${T.accent}33`, padding: '10px 22px', display: 'flex', alignItems: 'center', gap: 8 }}>
-        <Icon name="spark" size={13} color={T.accent} />
-        <span style={{ fontSize: 12, color: T.accentDeep, fontFamily: F.body, flex: 1, lineHeight: 1.4 }}>
-          {lang === 'ko' ? '데모 데이터 표시 중. 온보딩을 완료하면 실제 Drive 서재가 보입니다.' : 'Showing demo data. Complete onboarding to see your real Drive library.'}
-        </span>
-        <button onClick={onAddBook} style={{ flexShrink: 0, background: T.accent, color: '#FFF', border: 'none', borderRadius: 8, padding: '5px 10px', fontSize: 11, fontFamily: F.body, fontWeight: 600, cursor: 'pointer' }}>
-          {lang === 'ko' ? '시작하기' : 'Get started'}
-        </button>
-      </div>
-
-      <ScreenHeader subtitle={lang === 'ko' ? '내 서재' : 'My library'} title={t.library} right={<SyncBadge lang={lang} />} />
-
-      {/* 실제 로컬 책 — 데모 모드에서도 추가한 PDF는 바로 서재에 표시 */}
-      {localSection}
-
-      <div style={{ padding: '0 22px 16px' }}><ChipRow options={filterOpts} value={filter} onChange={setFilter} /></div>
-
-      {filter === 'all' && (
-        <div style={{ padding: '0 22px 22px' }}>
-          <SectionLabel>{t.nowReading}</SectionLabel>
-          <div onClick={() => setScreen('reader')} style={{ background: T.surface, borderRadius: 18, padding: 18, cursor: 'pointer', boxShadow: `0 1px 0 ${T.border}, 0 12px 32px -16px ${T.ink}22`, border: `1px solid ${T.border}`, position: 'relative', overflow: 'hidden' }}>
-            <div style={{ display: 'flex', gap: 16 }}>
-              <div style={{ width: 58, height: 86, background: featured.cover, borderRadius: '3px 3px 2px 2px', position: 'relative', overflow: 'hidden', flexShrink: 0, boxShadow: '2px 4px 12px rgba(0,0,0,.22)' }}>
-                <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 4, background: featured.spine }} />
-                <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(120deg,rgba(255,255,255,.18) 0%,transparent 55%,rgba(0,0,0,.1) 100%)' }} />
-                <div style={{ position: 'absolute', bottom: 8, left: 7, right: 4, fontSize: 9, color: 'rgba(255,255,255,0.8)', fontFamily: F.body, fontWeight: 600, lineHeight: 1.2 }}>
-                  {lang === 'ko' ? featured.author : featured.authorEn}
-                </div>
-              </div>
-              <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
-                <div>
-                  <div style={{ fontSize: 10, fontWeight: 600, color: T.accent, letterSpacing: 1.4, textTransform: 'uppercase', fontFamily: F.body, marginBottom: 4 }}>{lang === 'ko' ? '3장 진행 중' : 'Chapter 3 in progress'}</div>
-                  <div style={{ fontSize: 19, fontWeight: 600, color: T.ink, fontFamily: F.display, lineHeight: 1.15, marginBottom: 3, letterSpacing: -0.4 }}>{lang === 'ko' ? featured.title : featured.titleEn}</div>
-                  <div style={{ fontSize: 12.5, color: T.inkLight, fontFamily: F.body }}>{lang === 'ko' ? featured.author : featured.authorEn} · {featured.year}</div>
-                </div>
-                <div>
-                  <ProgressBar value={featured.progress} height={4} />
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 6 }}>
-                    <span style={{ fontSize: 11, color: T.inkLight, fontFamily: F.mono }}>p. {featured.lastPage} / {featured.pages}</span>
-                    <span style={{ fontSize: 11, color: T.accent, fontWeight: 600, fontFamily: F.body }}>{featured.progress}%</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-            <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
-              <Button variant="accent" full onClick={e => { e.stopPropagation(); setScreen('reader'); }} style={{ flex: 1, padding: '11px' }}>
-                <Icon name="play" size={12} color="#FFF" /> {t.continueReading}
-              </Button>
-              <Button variant="ghost" onClick={e => { e.stopPropagation(); openDriveSave(featured); }} style={{ padding: '11px 14px' }}>
-                <Icon name="cloud" size={16} />
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      <div style={{ padding: '0 22px' }}>
-        <SectionLabel>{t.yourLibrary} · <span style={{ fontWeight: 400, color: T.inkFaint }}>{filtered.length}</span></SectionLabel>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, rowGap: 18 }}>
-          {filtered.map(b => (
-            <div key={b.id} onClick={() => setScreen('reader')} style={{ cursor: 'pointer' }}>
-              <div style={{ marginBottom: 10, display: 'flex', justifyContent: 'center' }}>
-                <div style={{ width: 70, height: 100, background: b.cover, borderRadius: '3px 3px 2px 2px', position: 'relative', overflow: 'hidden', boxShadow: '2px 4px 12px rgba(0,0,0,.2)' }}>
-                  <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 4, background: b.spine }} />
-                  <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(120deg,rgba(255,255,255,.18) 0%,transparent 55%,rgba(0,0,0,.1) 100%)' }} />
-                  <div style={{ position: 'absolute', bottom: 8, left: 7, right: 4, fontSize: 8.5, color: 'rgba(255,255,255,0.7)', fontFamily: F.body, fontWeight: 600, lineHeight: 1.2 }}>
-                    {lang === 'ko' ? b.author : b.authorEn}
-                  </div>
-                </div>
-              </div>
-              <div style={{ fontSize: 13, fontWeight: 600, color: T.ink, fontFamily: F.display, lineHeight: 1.3, letterSpacing: -0.2, marginBottom: 2 }}>{lang === 'ko' ? b.title : b.titleEn}</div>
-              <div style={{ fontSize: 11, color: T.inkLight, fontFamily: F.body, marginBottom: 6 }}>{lang === 'ko' ? b.author : b.authorEn}</div>
-              {b.status !== 'unread' ? (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <div style={{ flex: 1 }}><ProgressBar value={b.progress} height={2} /></div>
-                  <span style={{ fontSize: 10, color: b.status === 'completed' ? T.secondary : T.accent, fontFamily: F.mono, fontWeight: 600 }}>{b.status === 'completed' ? '✓' : `${b.progress}%`}</span>
-                </div>
-              ) : <span style={{ fontSize: 10, color: T.inkFaint, fontFamily: F.body, letterSpacing: 0.6, textTransform: 'uppercase' }}>{t.unread}</span>}
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
