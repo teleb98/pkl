@@ -9,17 +9,18 @@ export function getWeeklyCoachData() {
   const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
   const weekSessions = sessions.filter(s => s.date >= sevenDaysAgo);
 
-  // Group by day
+  // Group by day — s.date 는 전체 ISO 타임스탬프이므로 일자(YYYY-MM-DD)로 잘라야 함
   const dailyByDate = {};
   weekSessions.forEach(s => {
-    if (!dailyByDate[s.date]) dailyByDate[s.date] = [];
-    dailyByDate[s.date].push(s);
+    const day = s.date.slice(0, 10);
+    if (!dailyByDate[day]) dailyByDate[day] = [];
+    dailyByDate[day].push(s);
   });
 
   // Count days with reading
   const readDays = Object.keys(dailyByDate).filter(date => {
     const daySessions = dailyByDate[date];
-    return daySessions.reduce((s, x) => s + x.minutes, 0) > 0;
+    return daySessions.reduce((s, x) => s + (x.minutes || 0), 0) > 0;
   }).length;
 
   // Daily stats
@@ -29,8 +30,8 @@ export function getWeeklyCoachData() {
     const dateStr = d.toISOString().slice(0, 10);
     const dayName = d.toLocaleDateString('en-US', { weekday: 'short' });
     const daySessions = dailyByDate[dateStr] || [];
-    const minutes = daySessions.reduce((s, x) => s + x.minutes, 0);
-    const pages = daySessions.reduce((s, x) => s + x.pages, 0);
+    const minutes = daySessions.reduce((s, x) => s + (x.minutes || 0), 0);
+    const pages = daySessions.reduce((s, x) => s + (x.pages || 0), 0);
     dailyStats.push({ date: dateStr, dayName, minutes, pages, sessions: daySessions.length });
   }
 

@@ -72,9 +72,20 @@ ${isMultipleChoice ? `JSON format (required):
 }
 
 export function parseQuizResponse(jsonStr) {
+  if (typeof jsonStr !== 'string' || !jsonStr.trim()) return null;
+  let s = jsonStr.trim();
+
+  // LLM이 지시를 어기고 ```json 코드펜스로 감싸는 경우가 잦음 → 펜스 내부만 추출
+  const fence = s.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  if (fence) s = fence[1].trim();
+
   try {
-    return JSON.parse(jsonStr);
-  } catch (e) {
-    return null;
+    return JSON.parse(s);
+  } catch {
+    // 앞뒤 잡담이 붙은 경우: 첫 '{' ~ 마지막 '}' 구간으로 재시도
+    const start = s.indexOf('{');
+    const end = s.lastIndexOf('}');
+    if (start < 0 || end <= start) return null;
+    try { return JSON.parse(s.slice(start, end + 1)); } catch { return null; }
   }
 }

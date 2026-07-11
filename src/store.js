@@ -1,5 +1,10 @@
 /* ── Persistent store (localStorage) ───────────────────── */
 
+// timestamp+random — 같은 ms 다중 추가 시 id 충돌 방지 (addPdfAnnotation 과 동일 규칙)
+function uid() {
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+}
+
 // Book index — minimal { id, title, webViewLink } list, kept in sync with Drive
 export function getBookIndex() {
   try { return JSON.parse(localStorage.getItem('pkl_book_index') || '[]'); } catch { return []; }
@@ -25,7 +30,7 @@ export function getNotes() {
 }
 export function addNote(note) {
   const list = getNotes();
-  const item = { id: Date.now().toString(), date: new Date().toISOString(), ...note };
+  const item = { id: uid(), date: new Date().toISOString(), ...note };
   localStorage.setItem('pkl_notes', JSON.stringify([item, ...list]));
   return item;
 }
@@ -39,7 +44,7 @@ export function getHighlights() {
 }
 export function addHighlight(hl) {
   const list = getHighlights();
-  const item = { id: Date.now().toString(), date: new Date().toISOString(), ...hl };
+  const item = { id: uid(), date: new Date().toISOString(), ...hl };
   localStorage.setItem('pkl_highlights', JSON.stringify([item, ...list]));
   return item;
 }
@@ -129,7 +134,7 @@ export function getSessions() {
 }
 export function addSession(session) {
   const list = getSessions();
-  const item = { id: Date.now().toString(), date: new Date().toISOString(), ...session };
+  const item = { id: uid(), date: new Date().toISOString(), ...session };
   localStorage.setItem('pkl_sessions', JSON.stringify([item, ...list]));
   return item;
 }
@@ -180,13 +185,23 @@ export function getWeekStats() {
   const totalMinutes = weekSessions.reduce((a, s) => a + (s.minutes || 0), 0);
   const totalPages = weekSessions.reduce((a, s) => a + (s.pages || 0), 0);
   const weekHighlights = highlights.filter(h => days.includes(h.date.slice(0, 10))).length;
-  // Streak
+  return { weekDays, totalMinutes, totalPages, weekHighlights, streak: computeStreak() };
+}
+
+/** 연속 독서일 수 — 전체 세션 기준 (7일 창 제한 없음 → streak30/100 배지 가능).
+ *  오늘 기록이 아직 없으면 어제부터 세어 하루가 끝나기 전 스트릭이 0으로 깨지지 않게 한다. */
+export function computeStreak() {
+  const readDays = new Set(
+    getSessions().filter(s => (s.minutes || 0) > 0).map(s => s.date.slice(0, 10))
+  );
+  const d = new Date();
+  if (!readDays.has(d.toISOString().slice(0, 10))) d.setDate(d.getDate() - 1);
   let streak = 0;
-  for (let i = days.length - 1; i >= 0; i--) {
-    if (minutesByDay[days[i]] > 0) streak++;
-    else break;
+  while (readDays.has(d.toISOString().slice(0, 10))) {
+    streak++;
+    d.setDate(d.getDate() - 1);
   }
-  return { weekDays, totalMinutes, totalPages, weekHighlights, streak };
+  return streak;
 }
 
 // ── 월간/연간 통계 (4-4 통계 이미지용) ──────────────────────

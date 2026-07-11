@@ -56,6 +56,14 @@ export function wrapText(ctx, text, maxWidth) {
   return lines;
 }
 
+/* ── 2.5 별점 문자열 — 0~5 로 clamp (범위 밖 입력 시 repeat 음수 방지) ── */
+export function starString(rating) {
+  const r = Math.max(0, Math.min(5, Number(rating) || 0));
+  const full = Math.floor(r);
+  const half = r - full >= 0.5;
+  return '★'.repeat(full) + (half ? '⯨' : '') + '☆'.repeat(5 - full - (half ? 1 : 0));
+}
+
 /* ── 3. 테마 (배경 그라데이션, 텍스트 색) ──────────────── */
 export const CARD_THEMES = {
   warm:   { from: '#fef3c7', to: '#fde68a', ink: '#78350f', accent: '#b45309' },
@@ -121,9 +129,7 @@ export function renderReviewCard(canvas, { book, review, theme = 'warm', stats =
   if (stats.rating) {
     y += 30;
     ctx.font = '40px sans-serif';
-    const full = Math.floor(stats.rating);
-    const half = stats.rating - full >= 0.5;
-    ctx.fillText('★'.repeat(full) + (half ? '⯨' : '') + '☆'.repeat(5 - full - (half ? 1 : 0)), 80, y);
+    ctx.fillText(starString(stats.rating), 80, y);
   }
 
   // 하단 통계

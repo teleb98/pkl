@@ -98,7 +98,7 @@ export function buildBackupMarkdown(book, notes, highlights) {
   const now = new Date().toISOString().slice(0, 16).replace('T', ' ');
   const lines = [
     `# ${book.title}`,
-    book.author ? `**저자:** ${book.author}` : '',
+    book.author ? `**저자:** ${book.author}` : null,
     `**백업:** ${now}  `,
     `**메모:** ${notes.length}개 | **하이라이트:** ${highlights.length}개`,
     '',
