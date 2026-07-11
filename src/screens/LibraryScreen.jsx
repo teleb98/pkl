@@ -611,6 +611,85 @@ export function LibraryScreen({ lang, setScreen, openDriveSave, userConfig, onAd
 
   const bumpTick = useCallback(() => setBookTick(n => n + 1), []);
 
+  // 로컬 PDF "내 기기" 섹션 — 실제 서재 / 데모 / Drive 빈 상태 모두에서 재사용
+  // (추가된 PDF가 Drive 미연동 상태에서도 서재에 바로 보이도록)
+  const localSection = (
+    <div style={{ padding: '0 22px 4px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+        <SectionLabel>💻 {lang === 'ko' ? '내 기기' : 'My Device'}</SectionLabel>
+        {usesNativePicker() ? (
+          <button
+            disabled={localAdding}
+            onClick={async () => {
+              setLocalAdding(true);
+              await addLocalBooksNative();
+              setLocalBooks(getLocalBooks());
+              setLocalAdding(false);
+            }}
+            style={{ padding: '5px 11px', borderRadius: 20, background: T.accentSoft, color: T.accent, fontSize: 11, fontWeight: 600, fontFamily: F.body, border: 'none', cursor: localAdding ? 'default' : 'pointer', opacity: localAdding ? 0.6 : 1 }}
+          >
+            {localAdding ? (lang === 'ko' ? '추가 중…' : 'Adding…') : `+ ${lang === 'ko' ? 'PDF 추가' : 'Add PDF'}`}
+          </button>
+        ) : (
+          <label style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 11px', borderRadius: 20, background: T.accentSoft, color: T.accent, fontSize: 11, fontWeight: 600, fontFamily: F.body, cursor: localAdding ? 'default' : 'pointer', opacity: localAdding ? 0.6 : 1 }}>
+            <input
+              type="file"
+              accept=".pdf"
+              multiple
+              style={{ display: 'none' }}
+              disabled={localAdding}
+              onChange={async (e) => {
+                const files = Array.from(e.target.files || []);
+                if (!files.length) return;
+                setLocalAdding(true);
+                for (const f of files) { await addLocalBook(f); }
+                setLocalBooks(getLocalBooks());
+                setLocalAdding(false);
+                e.target.value = '';
+              }}
+            />
+            {localAdding ? (lang === 'ko' ? '추가 중…' : 'Adding…') : `+ ${lang === 'ko' ? 'PDF 추가' : 'Add PDF'}`}
+          </label>
+        )}
+      </div>
+      {localBooks.length === 0 ? (
+        <div style={{ fontSize: 12, color: T.inkLight, fontFamily: F.body, padding: '8px 0 12px', lineHeight: 1.6 }}>
+          {lang === 'ko'
+            ? '기기의 PDF 파일을 추가하면 오프라인에서도 읽을 수 있습니다.'
+            : 'Add PDFs from your device to read them offline.'}
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 14 }}>
+          {localBooks.map(lb => (
+            <div
+              key={lb.id}
+              style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', background: T.surface, borderRadius: 12, border: `1px solid ${T.border}`, cursor: 'pointer' }}
+              onClick={() => onOpenBook && onOpenBook(lb)}
+            >
+              <div style={{ width: 32, height: 40, borderRadius: 4, background: T.accent, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: 14 }}>📄</div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: T.ink, fontFamily: F.body, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{lb.title}</div>
+                <div style={{ fontSize: 10, color: T.inkLight, fontFamily: F.mono, marginTop: 2 }}>
+                  {fmtFileSize(lb.size)} · ⚡ {lang === 'ko' ? '캐시됨' : 'Cached'}
+                </div>
+              </div>
+              <button
+                onClick={async (e) => {
+                  e.stopPropagation();
+                  await removeLocalBook(lb.id);
+                  setLocalBooks(getLocalBooks());
+                }}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px 6px', color: T.inkLight, fontSize: 16, flexShrink: 0 }}
+              >
+                ×
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+
   const filterOpts = [
     { key: 'all',       label: lang === 'ko' ? '전체' : 'All' },
     { key: 'reading',   label: lang === 'ko' ? '읽는 중' : 'Reading' },
@@ -627,7 +706,7 @@ export function LibraryScreen({ lang, setScreen, openDriveSave, userConfig, onAd
 
   /* ── No Drive configured: show concept demo ── */
   if (!hasConfig) {
-    return <ConceptLibrary lang={lang} setScreen={setScreen} openDriveSave={openDriveSave} onAddBook={onAddBook} onOpenBook={onOpenBook} />;
+    return <ConceptLibrary lang={lang} setScreen={setScreen} openDriveSave={openDriveSave} onAddBook={onAddBook} onOpenBook={onOpenBook} localSection={localSection} />;
   }
 
   /* ── Loading ── */
@@ -668,6 +747,7 @@ export function LibraryScreen({ lang, setScreen, openDriveSave, userConfig, onAd
     return (
       <div style={{ paddingBottom: 24 }}>
         <ScreenHeader subtitle={driveFolder.name} title={lang === 'ko' ? '서재' : 'Library'} right={<SyncBadge lang={lang} />} />
+        {localSection}
         <div style={{ padding: '40px 22px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16 }}>
           <div style={{ width: 72, height: 72, borderRadius: 20, background: T.accentSoft, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <Icon name="library" size={32} color={T.accent} />
@@ -708,81 +788,7 @@ export function LibraryScreen({ lang, setScreen, openDriveSave, userConfig, onAd
         }
       />
 
-      {/* ── 로컬 PDF 섹션 ── */}
-      <div style={{ padding: '0 22px 4px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-          <SectionLabel>💻 {lang === 'ko' ? '내 기기' : 'My Device'}</SectionLabel>
-          {usesNativePicker() ? (
-            <button
-              disabled={localAdding}
-              onClick={async () => {
-                setLocalAdding(true);
-                await addLocalBooksNative();
-                setLocalBooks(getLocalBooks());
-                setLocalAdding(false);
-              }}
-              style={{ padding: '5px 11px', borderRadius: 20, background: T.accentSoft, color: T.accent, fontSize: 11, fontWeight: 600, fontFamily: F.body, border: 'none', cursor: localAdding ? 'default' : 'pointer', opacity: localAdding ? 0.6 : 1 }}
-            >
-              {localAdding ? (lang === 'ko' ? '추가 중…' : 'Adding…') : `+ ${lang === 'ko' ? 'PDF 추가' : 'Add PDF'}`}
-            </button>
-          ) : (
-            <label style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 11px', borderRadius: 20, background: T.accentSoft, color: T.accent, fontSize: 11, fontWeight: 600, fontFamily: F.body, cursor: localAdding ? 'default' : 'pointer', opacity: localAdding ? 0.6 : 1 }}>
-              <input
-                type="file"
-                accept=".pdf"
-                multiple
-                style={{ display: 'none' }}
-                disabled={localAdding}
-                onChange={async (e) => {
-                  const files = Array.from(e.target.files || []);
-                  if (!files.length) return;
-                  setLocalAdding(true);
-                  for (const f of files) { await addLocalBook(f); }
-                  setLocalBooks(getLocalBooks());
-                  setLocalAdding(false);
-                  e.target.value = '';
-                }}
-              />
-              {localAdding ? (lang === 'ko' ? '추가 중…' : 'Adding…') : `+ ${lang === 'ko' ? 'PDF 추가' : 'Add PDF'}`}
-            </label>
-          )}
-        </div>
-        {localBooks.length === 0 ? (
-          <div style={{ fontSize: 12, color: T.inkLight, fontFamily: F.body, padding: '8px 0 12px', lineHeight: 1.6 }}>
-            {lang === 'ko'
-              ? '기기의 PDF 파일을 추가하면 오프라인에서도 읽을 수 있습니다.'
-              : 'Add PDFs from your device to read them offline.'}
-          </div>
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 14 }}>
-            {localBooks.map(lb => (
-              <div
-                key={lb.id}
-                style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', background: T.surface, borderRadius: 12, border: `1px solid ${T.border}`, cursor: 'pointer' }}
-                onClick={() => onOpenBook && onOpenBook(lb)}
-              >
-                <div style={{ width: 32, height: 40, borderRadius: 4, background: T.accent, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: 14 }}>📄</div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 13, fontWeight: 600, color: T.ink, fontFamily: F.body, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{lb.title}</div>
-                  <div style={{ fontSize: 10, color: T.inkLight, fontFamily: F.mono, marginTop: 2 }}>
-                    {fmtFileSize(lb.size)} · ⚡ {lang === 'ko' ? '캐시됨' : 'Cached'}
-                  </div>
-                </div>
-                <button
-                  onClick={async (e) => {
-                    e.stopPropagation();
-                    await removeLocalBook(lb.id);
-                    setLocalBooks(getLocalBooks());
-                  }}
-                  style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px 6px', color: T.inkLight, fontSize: 16, flexShrink: 0 }}
-                >
-                  ×
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
+      {localSection}
 
       {/* Featured / currently reading */}
       {featured && filter === 'all' && (
@@ -1012,7 +1018,7 @@ export function LibraryScreen({ lang, setScreen, openDriveSave, userConfig, onAd
 }
 
 /* ── Concept demo (no Drive configured) ─────────────────── */
-function ConceptLibrary({ lang, setScreen, openDriveSave, onAddBook, onOpenBook }) {
+function ConceptLibrary({ lang, setScreen, openDriveSave, onAddBook, onOpenBook, localSection }) {
   const { T, F } = useTheme();
   const t = i18n[lang];
   const [filter, setFilter] = useState('all');
@@ -1037,6 +1043,10 @@ function ConceptLibrary({ lang, setScreen, openDriveSave, onAddBook, onOpenBook 
       </div>
 
       <ScreenHeader subtitle={lang === 'ko' ? '내 서재' : 'My library'} title={t.library} right={<SyncBadge lang={lang} />} />
+
+      {/* 실제 로컬 책 — 데모 모드에서도 추가한 PDF는 바로 서재에 표시 */}
+      {localSection}
+
       <div style={{ padding: '0 22px 16px' }}><ChipRow options={filterOpts} value={filter} onChange={setFilter} /></div>
 
       {filter === 'all' && (

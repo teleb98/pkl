@@ -24,7 +24,7 @@ export function AddBookFlow({ lang, onCancel, onComplete }) {
       try {
         const added = await addLocalBooksNative(); // Electron 또는 Capacitor
         if (added && added.length) {
-          onComplete && onComplete(added[0]); // 첫 책 바로 열기
+          onComplete && onComplete(added[0]); // 추가 완료 → 서재로 이동
         }
         // 취소(빈 배열)면 그대로 머무름
       } finally {
