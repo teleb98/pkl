@@ -17,6 +17,12 @@ contextBridge.exposeInMainWorld('electron', {
   /** 외부 URL 브라우저에서 열기 */
   openExternal: (url) => ipcRenderer.invoke('shell:openExternal', url),
 
+  /** Apple Vision OCR 사용 가능 여부 (macOS 전용) */
+  macVisionAvailable: () => ipcRenderer.invoke('ocr:macVisionAvailable'),
+
+  /** Apple Vision OCR: base64 이미지 → { ok, text } (macOS 로컬, 오프라인) */
+  macVisionOcr: (base64) => ipcRenderer.invoke('ocr:macVision', base64),
+
   /** Google OAuth (시스템 브라우저 + loopback). → { ok, access_token, expires_in } */
   googleOAuth: ({ clientId, clientSecret, scope }) =>
     ipcRenderer.invoke('oauth:google', { clientId, clientSecret, scope }),

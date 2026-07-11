@@ -1,11 +1,12 @@
 /* OCR provider 통합 — 설정/환경/키에 따라 최적 엔진 선택.
 
    우선순위 (ocrMode 설정 기준):
-   - 'auto'  (기본): Ollama(있으면) → Tesseract 로컬 → Cloud Vision → AI Vision
-   - 'local' : 로컬만 (Ollama → Tesseract). 클라우드 전송 안 함(프라이버시)
+   - 'auto'  (기본): Apple Vision(macOS) → Ollama(있으면) → Tesseract 로컬 → Cloud Vision → AI Vision
+   - 'local' : 로컬만 (Apple Vision → Ollama → Tesseract). 클라우드 전송 안 함(프라이버시)
    - 'cloud' : Cloud Vision → AI Vision (기존 동작, 고정확)
 
    모든 provider 공통 입력: base64 이미지(데이터 URL 접두사 없음) → 텍스트 */
+import { ocrImageWithMacVision, isMacVisionAvailable } from './macVisionOcr.js';
 import { ocrImageWithTesseract } from './tesseractOcr.js';
 import { ocrImageWithOllama, isOllamaAvailable, pickBestVisionModel } from './ollamaOcr.js';
 import { ocrImageWithMediapipeGemma, isMediapipeGemmaAvailable, getGemmaModelUrl } from './mediapipeGemmaOcr.js';
@@ -34,6 +35,10 @@ export async function createOcr({ mode = 'auto', apiKeys = {}, lang = 'ko', call
 
   // provider 체인 구성 (앞에서부터 시도, 빈 결과/실패 시 다음)
   const chain = [];
+  // Apple Vision (Electron macOS): 즉시·오프라인·한국어 고품질 → 로컬 체인 최우선
+  if ((mode === 'auto' || mode === 'local') && await isMacVisionAvailable()) {
+    chain.push(async (b64) => ocrImageWithMacVision(b64));
+  }
   if (useOllama) {
     // 설치된 비전 모델 중 최적(Gemma 4 우선) 자동 선택. 없으면 기본 태그.
     const model = (await pickBestVisionModel()) || undefined;
@@ -73,6 +78,7 @@ export function ocrPossible(mode = 'auto', apiKeys = {}) {
   return true; // local/auto 는 Tesseract 로 항상 가능
 }
 
+export { ocrImageWithMacVision, isMacVisionAvailable } from './macVisionOcr.js';
 export { ocrImageWithTesseract } from './tesseractOcr.js';
 export { ocrImageWithOllama, isOllamaAvailable, listOllamaVisionModels } from './ollamaOcr.js';
 export { ocrImageWithMediapipeGemma, isMediapipeGemmaAvailable, getGemmaModelUrl } from './mediapipeGemmaOcr.js';

@@ -4,6 +4,7 @@ import { useTheme } from '../context.jsx';
 import { ProgressBar, Button, SectionLabel, Icon, ChipRow, SyncBadge, ScreenHeader } from '../components.jsx';
 import { getBookMeta, setBookMeta, saveBookIndex, getReadQueue, addToQueue, removeFromQueue, moveQueueItem, getNotesByBook, getHighlightsByBook, getCollections, getCollectionsByBook } from '../store.js';
 import { scanBookMeta, buildMetaContext } from '../scanBook.js';
+import { scanLocalBookMeta } from '../utils/localBookScan.js';
 import { printNotesAsPdf, downloadNotesAsMarkdown } from '../utils/exportNotes.js';
 import { BookCollectionPicker, CollectionManager } from '../components/CollectionManager.jsx';
 import { ShareModal } from '../components/ShareModal.jsx';
@@ -172,7 +173,12 @@ function BookDetailSheet({ book, lang, geminiKey, claudeKey, accessToken, onClos
   const [scanError, setScanError] = useState(null);
 
   const usingClaude = !!claudeKey;
-  const STEPS = ko
+  const isLocal = book.source === 'local';
+  const STEPS = isLocal
+    ? (ko
+        ? ['PDF 텍스트 읽는 중…', '표지 비전 인식 중…', '책 정보 추출 중…']
+        : ['Reading PDF text…', 'Recognizing cover…', 'Extracting book info…'])
+    : ko
     ? (usingClaude
         ? ['Drive에서 파일 가져오는 중…', 'AI 메타데이터 분석 중…', 'AI 메타데이터 분석 중…']
         : ['Drive에서 파일 가져오는 중…', 'Gemini에 업로드 중…', 'AI 메타데이터 분석 중…'])
@@ -187,7 +193,8 @@ function BookDetailSheet({ book, lang, geminiKey, claudeKey, accessToken, onClos
   }, [scanning]); // eslint-disable-line
 
   const scanStatus = scanning ? 'scanning' : (meta.aiScanStatus || null);
-  const hasKey     = !!((geminiKey || claudeKey) && accessToken);
+  // 로컬 책은 기기 내 스캔(텍스트 레이어/로컬 비전 OCR)이라 Drive 토큰·AI 키 불필요
+  const hasKey     = !!((geminiKey || claudeKey) && accessToken) || isLocal;
   const isDone     = scanStatus === 'done';
   const isRunning  = scanStatus === 'scanning';
   const canScan    = hasKey && !isDone && !isRunning;
@@ -203,7 +210,9 @@ function BookDetailSheet({ book, lang, geminiKey, claudeKey, accessToken, onClos
     setBookMeta(book.id, { aiScanStatus: 'scanning' });
     onMetaChange?.();
     try {
-      const m = await scanBookMeta({ fileId: book.id, fileName: book.title + '.pdf', mimeType: 'application/pdf', size: book.size, accessToken, geminiKey, claudeKey, lang });
+      const m = isLocal
+        ? await scanLocalBookMeta(book, { lang, apiKeys: { claude: claudeKey, gemini: geminiKey } })
+        : await scanBookMeta({ fileId: book.id, fileName: book.title + '.pdf', mimeType: 'application/pdf', size: book.size, accessToken, geminiKey, claudeKey, lang });
       setBookMeta(book.id, m);
       setMeta(m);
     } catch (e) {

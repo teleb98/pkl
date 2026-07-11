@@ -156,8 +156,18 @@ function extractPdfText(buffer) {
 }
 
 async function analyzeWithClaude(buffer, claudeKey, lang, fileName) {
-  const extracted = extractPdfText(buffer);
-  const context = extracted.length > 10
+  return analyzeTextWithClaude(extractPdfText(buffer), claudeKey, lang, fileName);
+}
+
+/** 이미 추출된 텍스트(OCR/텍스트레이어) → AI 메타데이터. 로컬 비전 스캔 경로에서 사용 */
+export async function analyzeTextMeta(text, { claudeKey, geminiKey }, lang, fileName) {
+  if (claudeKey) return analyzeTextWithClaude(text, claudeKey, lang, fileName);
+  if (geminiKey) return analyzeTextWithGemini(text, geminiKey, lang, fileName);
+  throw new Error('no-ai-key');
+}
+
+async function analyzeTextWithClaude(extracted, claudeKey, lang, fileName) {
+  const context = (extracted || '').length > 10
     ? `파일명: ${fileName}\n\n추출된 텍스트:\n${extracted}`
     : `파일명: ${fileName}`;
 
@@ -187,6 +197,31 @@ async function analyzeWithClaude(buffer, claudeKey, lang, fileName) {
   }
 
   const raw = (await res.json()).content?.[0]?.text || '';
+  return parseMeta(raw, fileName, lang);
+}
+
+async function analyzeTextWithGemini(extracted, geminiKey, lang, fileName) {
+  const context = (extracted || '').length > 10
+    ? `파일명: ${fileName}\n\n추출된 텍스트:\n${extracted}`
+    : `파일명: ${fileName}`;
+
+  const res = await fetch(`${GEMINI_BASE}/models/gemini-2.0-flash:generateContent`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-goog-api-key': geminiKey },
+    body: JSON.stringify({
+      contents: [{ parts: [{ text: `${context}\n\n${lang === 'ko' ? META_PROMPT_KO : META_PROMPT_EN}` }] }],
+      generationConfig: { maxOutputTokens: 512, temperature: 0.1 },
+    }),
+  });
+
+  if (!res.ok) {
+    if (res.status === 429) throw new Error('rate-limit');
+    if (res.status === 401 || res.status === 403) throw new Error('invalid-key');
+    const msg = await res.text().catch(() => '');
+    throw new Error(`Gemini ${res.status}${msg ? ': ' + msg.slice(0, 120) : ''}`);
+  }
+
+  const raw = (await res.json()).candidates?.[0]?.content?.parts?.[0]?.text || '';
   return parseMeta(raw, fileName, lang);
 }
 

@@ -118,6 +118,11 @@ ipcMain.handle('fs:readPdf', async (_e, filePath) => {
 ipcMain.handle('system:isDark', () => nativeTheme.shouldUseDarkColors);
 ipcMain.handle('app:version', () => app.getVersion());
 
+// ── Apple Vision OCR (macOS 로컬, 오프라인) ────────────────────────────
+const { runMacVisionOcr, isMacVisionSupported } = require('./macVision.cjs');
+ipcMain.handle('ocr:macVisionAvailable', () => isMacVisionSupported());
+ipcMain.handle('ocr:macVision', (_e, base64) => runMacVisionOcr(base64));
+
 // 보안: 외부 URL 열기는 http/https/mailto 스킴만 허용 (file://, 커스텀 스킴 등 차단)
 ipcMain.handle('shell:openExternal', (_e, url) => {
   try {

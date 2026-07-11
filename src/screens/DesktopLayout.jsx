@@ -4,6 +4,7 @@ import { useTheme } from '../context.jsx';
 import { BookCover, ProgressBar, Button, Icon, ChipRow, SectionLabel, SyncBadge, TypeBadge } from '../components.jsx';
 import { PklMark } from '../Logo.jsx';
 import { scanBookMeta, buildMetaContext } from '../scanBook.js';
+import { scanLocalBookMeta } from '../utils/localBookScan.js';
 import { getPageText, getDocumentText, getPageImage, getTextForRange } from '../pageTextCache.js';
 import { ensureBookText } from '../utils/ensureBookText.js';
 import { showError } from '../utils/toast.js';
@@ -316,7 +317,12 @@ function BookDetailModal({ book, lang, geminiKey, claudeKey, accessToken, onClos
   const [scanError, setScanError] = useState(null);
 
   const usingClaude = !!claudeKey;
-  const STEPS = ko
+  const isLocal = book.source === 'local';
+  const STEPS = isLocal
+    ? (ko
+        ? ['PDF 텍스트 읽는 중…', '표지 비전 인식 중…', '책 정보 추출 중…']
+        : ['Reading PDF text…', 'Recognizing cover…', 'Extracting book info…'])
+    : ko
     ? (usingClaude
         ? ['Drive에서 파일 가져오는 중…', 'AI 메타데이터 분석 중…', 'AI 메타데이터 분석 중…']
         : ['Drive에서 파일 가져오는 중…', 'Gemini에 업로드 중…', 'AI 메타데이터 분석 중…'])
@@ -331,7 +337,8 @@ function BookDetailModal({ book, lang, geminiKey, claudeKey, accessToken, onClos
   }, [scanning]); // eslint-disable-line
 
   const scanStatus = scanning ? 'scanning' : (meta.aiScanStatus || null);
-  const hasKey     = !!((geminiKey || claudeKey) && accessToken);
+  // 로컬 책은 기기 내 스캔(텍스트 레이어/로컬 비전 OCR)이라 Drive 토큰·AI 키 불필요
+  const hasKey     = !!((geminiKey || claudeKey) && accessToken) || isLocal;
   const isDone     = scanStatus === 'done';
   const isRunning  = scanStatus === 'scanning';
   const canScan    = hasKey && !isDone && !isRunning;
@@ -348,16 +355,18 @@ function BookDetailModal({ book, lang, geminiKey, claudeKey, accessToken, onClos
     setBookMeta(book.id, { aiScanStatus: 'scanning' });
     onMetaChange?.();
     try {
-      const m = await scanBookMeta({
-        fileId: book.id,
-        fileName: book.title + '.pdf',
-        mimeType: 'application/pdf',
-        size: book.size,
-        accessToken,
-        geminiKey,
-        claudeKey,
-        lang,
-      });
+      const m = isLocal
+        ? await scanLocalBookMeta(book, { lang, apiKeys: { claude: claudeKey, gemini: geminiKey } })
+        : await scanBookMeta({
+            fileId: book.id,
+            fileName: book.title + '.pdf',
+            mimeType: 'application/pdf',
+            size: book.size,
+            accessToken,
+            geminiKey,
+            claudeKey,
+            lang,
+          });
       setBookMeta(book.id, m);
       setMeta(m);
     } catch (e) {
@@ -427,9 +436,13 @@ function BookDetailModal({ book, lang, geminiKey, claudeKey, accessToken, onClos
                 ? (ko
                     ? (scanStatus === 'pending'
                         ? 'API 요청 한도에 도달했습니다. 잠시 후 아래 AI 재분석 버튼으로 다시 시도해 주세요.'
+                        : isLocal && !(geminiKey || claudeKey)
+                        ? '기기 안에서 표지·속표지를 인식해 제목과 저자를 추출합니다 (외부 전송 없음). 아래 분석 버튼을 눌러 시작하세요.'
                         : '제목·저자·요약·주제를 자동으로 추출합니다. 아래 AI 분석 버튼을 눌러 시작하세요.')
                     : (scanStatus === 'pending'
                         ? 'API rate limit reached. Please retry with AI Scan after a moment.'
+                        : isLocal && !(geminiKey || claudeKey)
+                        ? 'Recognize the cover on-device to extract title and author (nothing leaves your device). Tap Scan below.'
                         : 'Auto-extract title, author, summary and topics. Tap AI Scan below.'))
                 : (ko ? 'Gemini API 키를 설정하면 AI 분석을 사용할 수 있습니다.' : 'Set up a Gemini API key to enable AI analysis.')}
             </div>
