@@ -13,7 +13,9 @@ if (typeof Promise.try !== 'function') {
   };
 }
 
-const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || ''
+// 빈 client_id 로 GIS(initTokenClient)가 초기화되면 예외가 나며 앱 전체가 crash.
+// 미설정 시 더미 ID로 초기화만 통과시키고, 실제 로그인은 useGoogleAuth의 hasWebOAuth 가드가 막는다.
+const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || 'unconfigured.apps.googleusercontent.com'
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>

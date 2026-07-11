@@ -22,6 +22,12 @@ export function googleLoginBlocked() {
   return isElectron() && !hasDesktopOAuth();
 }
 
+/** 웹 Google OAuth 클라이언트 ID가 설정돼 있는지.
+ *  미설정이면 GIS 팝업을 열 수 없다 (main.jsx 는 더미 ID로 초기화만 통과). */
+export function hasWebOAuth() {
+  return !!(import.meta.env.VITE_GOOGLE_CLIENT_ID);
+}
+
 export function useGoogleAuth({ scope, onSuccess, onError, hint, prompt }) {
   // 웹용 훅은 항상 호출 (Hooks 규칙). Electron 에서는 사용만 안 함.
   const webLogin = useGoogleLogin({
@@ -35,7 +41,11 @@ export function useGoogleAuth({ scope, onSuccess, onError, hint, prompt }) {
     prompt,
   });
 
-  if (!isElectron()) return webLogin;
+  if (!isElectron()) {
+    // 웹 ID 미설정 → 더미 ID로 팝업을 열면 Google 400. 시도 자체를 막는다.
+    if (!hasWebOAuth()) return () => onError?.('web-oauth-not-configured');
+    return webLogin;
+  }
 
   // Electron: 시스템 브라우저 loopback flow
   return async () => {

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useGoogleAuth, hasDesktopOAuth } from '../utils/useGoogleAuth.js';
+import { useGoogleAuth, hasDesktopOAuth, hasWebOAuth } from '../utils/useGoogleAuth.js';
 import { isElectron, isCapacitor, usesNativePicker } from '../utils/localBooks.js';
 import { useTheme } from '../context.jsx';
 import { Button, Icon } from '../components.jsx';
@@ -63,12 +63,14 @@ function Step1Google({ lang, onNext }) {
   const [user, setUser] = useState(null);
   const ko = lang === 'ko';
 
-  // 네이티브 앱(Electron/Capacitor) + OAuth 미설정 → 임베디드 웹뷰 OAuth 차단됨, 로컬 우선 안내
-  const isNativeNoOAuth = usesNativePicker() && !hasDesktopOAuth();
-  const nativeIcon = isCapacitor() ? '📱' : '💻';
+  // OAuth 미설정(네이티브=데스크톱 ID 없음, 웹=웹 ID 없음) → Google 로그인 불가, 로컬 우선 안내
+  const isNativeNoOAuth = usesNativePicker() ? !hasDesktopOAuth() : !hasWebOAuth();
+  const nativeIcon = isCapacitor() ? '📱' : isElectron() ? '💻' : '🌐';
   const nativeTitle = isCapacitor()
     ? (ko ? '앱으로 바로 시작' : 'Start with the App')
-    : (ko ? '데스크톱 앱으로 바로 시작' : 'Start with the Desktop App');
+    : isElectron()
+      ? (ko ? '데스크톱 앱으로 바로 시작' : 'Start with the Desktop App')
+      : (ko ? '로컬 PDF로 바로 시작' : 'Start with Local PDFs');
 
   const googleLogin = useGoogleAuth({
     scope: 'openid email profile',
@@ -123,8 +125,8 @@ function Step1Google({ lang, onNext }) {
           <Icon name="cloud" size={13} color={T.inkLight} />
           <span style={{ fontSize: 12, color: T.inkLight, fontFamily: F.body, lineHeight: 1.55 }}>
             {ko
-              ? 'Google Drive 연동(클라우드 책·백업)은 데스크톱 OAuth 설정 후 사용할 수 있습니다. 자세한 내용은 설정을 참고하세요.'
-              : 'Google Drive sync (cloud books·backup) requires desktop OAuth setup. See Settings for details.'}
+              ? `Google Drive 연동(클라우드 책·백업)은 ${usesNativePicker() ? '데스크톱' : 'Google'} OAuth 설정 후 사용할 수 있습니다. 자세한 내용은 설정을 참고하세요.`
+              : `Google Drive sync (cloud books·backup) requires ${usesNativePicker() ? 'desktop' : 'Google'} OAuth setup. See Settings for details.`}
           </span>
         </div>
 
