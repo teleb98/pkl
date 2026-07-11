@@ -1,0 +1,81 @@
+# PKL 릴리스 빌드 — 태그(v*) push 시 서명된 산출물 자동 빌드.
+# macOS DMG(서명+공증) · Android APK(서명) · 웹은 Vercel 연동 별도.
+#
+# 필요한 GitHub Secrets (Settings → Secrets and variables → Actions):
+#   [macOS 서명·공증]
+#     MAC_CSC_LINK              base64 인코딩한 Developer ID Application .p12
+#                              (base64 -i cert.p12 | pbcopy)
+#     MAC_CSC_KEY_PASSWORD      .p12 암호
+#     APPLE_ID                  공증용 Apple ID
+#     APPLE_APP_SPECIFIC_PASSWORD  앱 암호 (appleid.apple.com)
+#     APPLE_TEAM_ID             팀 ID
+#   [Android 서명]
+#     ANDROID_KEYSTORE_BASE64   base64 인코딩한 pkl-release.jks
+#     ANDROID_KEYSTORE_PASSWORD / ANDROID_KEY_ALIAS / ANDROID_KEY_PASSWORD
+#   [env]
+#     VITE_GOOGLE_CLIENT_ID 등 빌드 타임 변수(선택)
+# Secrets 미설정 시: macOS는 ad-hoc, 공증은 자동 skip(notarize.cjs).
+
+name: release
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+jobs:
+  macos:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20', cache: 'npm' }
+      - run: npm ci
+      - run: npm run test:run
+      - name: Build & sign macOS DMG
+        env:
+          CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          VITE_GOOGLE_CLIENT_ID: ${{ secrets.VITE_GOOGLE_CLIENT_ID }}
+        run: npm run electron:build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-dmg
+          path: release/*.dmg
+
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20', cache: 'npm' }
+      - uses: actions/setup-java@v4
+        with: { distribution: 'temurin', java-version: '21' }
+      - run: npm ci
+      - name: Restore keystore (secrets 있을 때만)
+        env:
+          KS_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KS_PW: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KS_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KS_KEYPW: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          if [ -z "$KS_B64" ]; then
+            echo "ANDROID_KEYSTORE_BASE64 미설정 — 디버그 서명으로 폴백"; exit 0
+          fi
+          mkdir -p android/keystore
+          echo "$KS_B64" | base64 -d > android/keystore/pkl-release.jks
+          printf 'storeFile=keystore/pkl-release.jks\nstorePassword=%s\nkeyAlias=%s\nkeyPassword=%s\n' \
+            "$KS_PW" "$KS_ALIAS" "$KS_KEYPW" > android/keystore.properties
+      - name: Build web + sync + APK
+        env:
+          VITE_GOOGLE_CLIENT_ID: ${{ secrets.VITE_GOOGLE_CLIENT_ID }}
+        run: |
+          npm run build
+          npx cap sync android
+          cd android && chmod +x gradlew && ./gradlew assembleRelease
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-apk
+          path: android/app/build/outputs/apk/release/*.apk

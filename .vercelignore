@@ -1,0 +1,8 @@
+# 네이티브/데스크톱 빌드 산출물 — 웹 배포에 불필요 (Vercel 100MB 제한)
+android/
+ios/
+electron/
+release/
+*.dmg
+*.apk
+scripts/

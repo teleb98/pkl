@@ -1,0 +1,28 @@
+*, *::before, *::after { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body, #root { margin: 0; padding: 0; height: 100%; }
+body {
+  font-family: 'Pretendard Variable', 'Pretendard', 'DM Sans', system-ui, sans-serif;
+  word-break: keep-all;
+  line-break: strict;
+  overflow: hidden;
+  /* 태블릿/모바일 PWA: 노치·홈바 안전영역, 당겨서 새로고침/바운스 방지 */
+  overscroll-behavior: none;
+  -webkit-text-size-adjust: 100%;
+}
+/* iPad/iPhone 홈바·노치 안전영역 — standalone 앱에서 #root 가 가려지지 않도록 */
+@supports (padding: env(safe-area-inset-top)) {
+  #root {
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+  }
+}
+/* 터치 스크롤 관성 + 텍스트 선택은 본문에서만 허용 */
+#root { -webkit-overflow-scrolling: touch; }
+button { font-family: inherit; word-break: keep-all; cursor: pointer; }
+input { font-family: inherit; }
+::-webkit-scrollbar { width: 0; height: 0; }
+::selection { background: #B8440A33; }
+@keyframes pulse { 0%, 100% { opacity: 0.5; transform: scale(1); } 50% { opacity: 1; transform: scale(1.2); } }
+@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }

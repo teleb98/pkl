@@ -1,0 +1,16 @@
+{
+  "appId": "com.pkl.app",
+  "appName": "PKL",
+  "webDir": "dist",
+  "backgroundColor": "#FAF7F2",
+  "ios": {
+    "contentInset": "always",
+    "backgroundColor": "#FAF7F2"
+  },
+  "android": {
+    "backgroundColor": "#FAF7F2"
+  },
+  "server": {
+    "androidScheme": "https"
+  }
+}

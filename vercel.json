@@ -1,0 +1,19 @@
+{
+  "rewrites": [{ "source": "/((?!favicon\\.svg|privacy\\.html).*)", "destination": "/index.html" }],
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        { "key": "Strict-Transport-Security", "value": "max-age=63072000; includeSubDomains; preload" },
+        { "key": "X-Content-Type-Options",    "value": "nosniff" },
+        { "key": "X-Frame-Options",           "value": "DENY" },
+        { "key": "Referrer-Policy",           "value": "strict-origin-when-cross-origin" },
+        { "key": "Permissions-Policy",        "value": "camera=(), microphone=(), geolocation=()" },
+        {
+          "key": "Content-Security-Policy",
+          "value": "default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://accounts.google.com https://cdn.jsdelivr.net; connect-src 'self' blob: https://api.anthropic.com https://generativelanguage.googleapis.com https://vision.googleapis.com https://www.googleapis.com https://oauth2.googleapis.com https://accounts.google.com https://drive.google.com https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; font-src 'self' https://fonts.gstatic.com https://cdn.jsdelivr.net; img-src 'self' data: blob: https://lh3.googleusercontent.com; worker-src 'self' blob: https://cdn.jsdelivr.net; frame-src https://drive.google.com https://docs.google.com https://accounts.google.com; object-src 'none'; base-uri 'self'; frame-ancestors 'none';"
+        }
+      ]
+    }
+  ]
+}

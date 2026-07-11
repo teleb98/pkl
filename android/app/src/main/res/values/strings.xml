@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">PKL</string>
+    <string name="title_activity_main">PKL</string>
+    <string name="package_name">com.pkl.app</string>
+    <string name="custom_url_scheme">com.pkl.app</string>
+</resources>
