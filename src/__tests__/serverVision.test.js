@@ -30,7 +30,7 @@ import { createOcr, _resetOllamaCache } from '../utils/ocr/index.js';
 import { setPageText, getPageText, setViewedPage, _resetForTesting } from '../pageTextCache.js';
 
 function mockFetch(handler) {
-  global.fetch = vi.fn(handler);
+  globalThis.fetch = vi.fn(handler);
 }
 
 beforeEach(() => {
@@ -49,7 +49,7 @@ describe('serverVisionOcr provider', () => {
     mockFetch(async () => ({ ok: true, json: async () => ({ ok: true, available: true }) }));
     expect(await isServerVisionAvailable()).toBe(true);
     expect(await isServerVisionAvailable()).toBe(true);
-    expect(global.fetch).toHaveBeenCalledTimes(1);
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
   });
 
   it('서버 미지원(404/미배포) → 사용 불가, throw 하지 않음', async () => {
@@ -98,7 +98,7 @@ describe('createOcr — 서버 Vision 체인 통합', () => {
     const ocr = await createOcr({ mode: 'local', lang: 'ko' });
     expect(await ocr('QkFTRTY0')).toBe('네이티브 비전');
     // 서버 가용성 확인 fetch 자체가 불필요 (else-if)
-    expect(global.fetch).not.toHaveBeenCalled();
+    expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 
   it('서버 Vision 실패 → Tesseract 폴백', async () => {
