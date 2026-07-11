@@ -12,6 +12,7 @@ import { getBookMeta, setBookMeta, addNote, addHighlight, getNotes, getHighlight
 import { renderStatsCard, downloadStatsCard, STATS_THEMES, fmtMinutes, monthName as monthLabelFn } from '../utils/statsCard.js';
 import { backupBookToDrive } from '../utils/driveBackup.js';
 import { PdfViewer } from '../components/PdfViewer.jsx';
+import { VisionTextSheet } from '../components/VisionTextSheet.jsx';
 import { KnowledgeScreen } from './KnowledgeScreen.jsx';
 import { RangeSelector } from '../components/RangeSelector.jsx';
 import { QuizModal } from '../components/QuizModal.jsx';
@@ -1421,6 +1422,23 @@ function DesktopReader({ lang, setScreen, openDriveSave, isPC, currentBook, apiK
     saveReaderSettings(next);
   };
 
+  const [visionOcr, setVisionOcr] = useState(null); // 텍스트 인식 시트 상태
+
+  // 현재 페이지 Vision/로컬 OCR → 활용 시트 (복사·메모·AI 질문)
+  const recognizeCurrentPage = async () => {
+    if (!book?.id || visionOcr?.status === 'running') return;
+    setVisionOcr({ status: 'running', pageNum: pdfPage });
+    try {
+      const res = await pdfViewerRef.current?.ocrPage(pdfPage, {
+        onProgress: ({ engine, pct }) => setVisionOcr(s => s?.status === 'running' ? { ...s, engine, enginePct: pct } : s),
+      });
+      if (res?.text) setVisionOcr({ status: 'done', ...res });
+      else setVisionOcr({ status: 'error', pageNum: pdfPage });
+    } catch {
+      setVisionOcr({ status: 'error', pageNum: pdfPage });
+    }
+  };
+
   const showGenFeedback = (msg) => {
     setGenFeedback(msg);
     setTimeout(() => setGenFeedback(""), 3000);
@@ -1627,6 +1645,8 @@ function DesktopReader({ lang, setScreen, openDriveSave, isPC, currentBook, apiK
                 <Icon name="cloud" size={14} color={T.inkMid} />
               </button>
             )}
+            {/* 텍스트 인식 (Vision) */}
+            <button onClick={recognizeCurrentPage} disabled={visionOcr?.status === 'running'} title={lang === "ko" ? "텍스트 인식 (Vision)" : "Recognize text (Vision)"} style={{ width: 30, height: 30, borderRadius: 8, border: `1px solid ${T.border}`, background: visionOcr?.status === 'running' ? T.surfaceAlt : "transparent", cursor: visionOcr?.status === 'running' ? "default" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, opacity: visionOcr?.status === 'running' ? 0.5 : 1 }}>{visionOcr?.status === 'running' ? "⏳" : "🔍"}</button>
             {/* Vocab generation */}
             <button onClick={() => setShowVocabRange(true)} disabled={vocabLoading} title={lang === "ko" ? "어휘 생성" : "Generate vocabulary"} style={{ width: 30, height: 30, borderRadius: 8, border: `1px solid ${T.border}`, background: vocabLoading ? T.surfaceAlt : "transparent", cursor: vocabLoading ? "default" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, opacity: vocabLoading ? 0.5 : 1 }}>{vocabLoading ? "⏳" : "📚"}</button>
             {/* Quiz generation */}
@@ -1856,6 +1876,25 @@ function DesktopReader({ lang, setScreen, openDriveSave, isPC, currentBook, apiK
         <div style={{ position: "fixed", bottom: 28, left: "50%", transform: "translateX(-50%)", zIndex: 400, background: T.ink, color: T.surface, padding: "10px 18px", borderRadius: 10, fontSize: 13, fontWeight: 600, fontFamily: F.body, boxShadow: "0 4px 20px rgba(0,0,0,.3)" }}>
           {genFeedback}
         </div>
+      )}
+
+      {/* 텍스트 인식(Vision) 결과 시트 */}
+      {visionOcr && (
+        <VisionTextSheet
+          lang={lang}
+          state={visionOcr}
+          onClose={() => setVisionOcr(null)}
+          onSaveNote={(text, pageNum) => {
+            addNote({ bookId: book.id, bookTitle: book.title, text: text.slice(0, 2000), page: pageNum, tags: ['OCR'] });
+            setNotes(getNotes().filter(n => n.bookId === book.id));
+            showGenFeedback(lang === 'ko' ? '✓ 메모로 저장됨' : '✓ Saved as note');
+          }}
+          onAskAI={() => {
+            setVisionOcr(null);
+            setSideTab('ai');
+            setNotesPanel(true); // 인식 텍스트는 pageTextCache 를 통해 AI 컨텍스트로 사용됨
+          }}
+        />
       )}
 
       {/* 어휘 범위 선택 */}

@@ -176,6 +176,25 @@ export const PdfViewer = forwardRef(function PdfViewer({ fileId, source = 'drive
 
       return { extracted, ocr: ocrCount };
     },
+
+    /** 한 페이지를 Vision/로컬 OCR로 인식 → 텍스트 반환 + 캐시(force 덮어쓰기).
+        뷰어의 '텍스트 인식' 버튼용 — 인식 결과는 AI/검색/어휘에 자동 활용된다. */
+    async ocrPage(pageNum, { onProgress } = {}) {
+      const pdf = pdfRef.current;
+      if (!pdf) return null;
+      const n = Math.max(1, Math.min(pageNum || 1, pdf.numPages));
+      const pdfPage = await pdf.getPage(n);
+      const imgBase64 = await renderPageToImage(pdfPage);
+      if (!imgBase64) return null;
+      let engineUsed = null;
+      const ocr = await createOcr({
+        mode: ocrMode || readOcrMode(), apiKeys, lang, callAI,
+        onProgress: ({ engine, pct }) => { engineUsed = engine; onProgress?.({ engine, pct }); },
+      });
+      const text = (await ocr(imgBase64))?.trim() || '';
+      if (text) setPageText(fileId, n, text, { force: true });
+      return { pageNum: n, text, engine: engineUsed };
+    },
   }), [fileId, apiKeys, lang, ocrMode]); // eslint-disable-line
 
   const ko = lang === 'ko';

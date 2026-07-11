@@ -8,6 +8,7 @@ import { TextSelectionAI } from '../components/TextSelectionAI.jsx';
 import { WordDefinition } from '../components/WordDefinition.jsx';
 import { RangeSelector } from '../components/RangeSelector.jsx';
 import { QuizModal } from '../components/QuizModal.jsx';
+import { VisionTextSheet } from '../components/VisionTextSheet.jsx';
 import { callAI } from '../aiClient.js';
 import { extractWord } from '../utils/wordDefinition.js';
 import { buildMetaContext } from '../scanBook.js';
@@ -214,6 +215,7 @@ export function ReaderScreen({ lang, setScreen, openDriveSave, currentBook, apiK
   const [showVocabRange, setShowVocabRange] = useState(false);
   const [showQuizRange, setShowQuizRange] = useState(false);
   const [vocabLoading, setVocabLoading] = useState(false);
+  const [visionOcr, setVisionOcr] = useState(null); // 텍스트 인식 시트 상태
   const [quizLoading, setQuizLoading] = useState(false);
   const [quizData, setQuizData] = useState(null);
   const [genFeedback, setGenFeedback] = useState('');
@@ -312,6 +314,21 @@ export function ReaderScreen({ lang, setScreen, openDriveSave, currentBook, apiK
     const full = typeof doc === 'string' ? doc : (doc?.text || '');
     if (full) return full;
     throw new Error('no-text');
+  };
+
+  // 현재 페이지 Vision/로컬 OCR → 활용 시트 (복사·메모·AI 질문)
+  const recognizeCurrentPage = async () => {
+    if (!book?.id || visionOcr?.status === 'running') return;
+    setVisionOcr({ status: 'running', pageNum: pdfPage });
+    try {
+      const res = await pdfViewerRef.current?.ocrPage(pdfPage, {
+        onProgress: ({ engine, pct }) => setVisionOcr(s => s?.status === 'running' ? { ...s, engine, enginePct: pct } : s),
+      });
+      if (res?.text) setVisionOcr({ status: 'done', ...res });
+      else setVisionOcr({ status: 'error', pageNum: pdfPage });
+    } catch {
+      setVisionOcr({ status: 'error', pageNum: pdfPage });
+    }
   };
 
   const generateVocabInRange = async (startPage, endPage) => {
@@ -671,6 +688,7 @@ export function ReaderScreen({ lang, setScreen, openDriveSave, currentBook, apiK
               : (lang === 'ko' ? '아직 시작 전' : 'Not started')}
           </div>
         </div>
+        <button onClick={recognizeCurrentPage} title={lang === 'ko' ? '텍스트 인식 (Vision)' : 'Recognize text (Vision)'} style={{ background: 'none', border: 'none', cursor: visionOcr?.status === 'running' ? 'default' : 'pointer', padding: 6, color: T.inkMid, display: 'flex', fontSize: 14, opacity: visionOcr?.status === 'running' ? 0.4 : 1 }}>🔍</button>
         <button onClick={() => setShowVocabRange(true)} title={lang === 'ko' ? '어휘 생성' : 'Generate vocab'} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 6, color: T.inkMid, display: 'flex', fontSize: 14 }}>📚</button>
         <button onClick={() => setShowQuizRange(true)} title={lang === 'ko' ? '퀴즈 생성' : 'Generate quiz'} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 6, color: T.inkMid, display: 'flex', fontSize: 14 }}>🎯</button>
         <div style={{ width: 1, height: 16, background: T.border, margin: '0 2px' }} />
@@ -854,6 +872,24 @@ export function ReaderScreen({ lang, setScreen, openDriveSave, currentBook, apiK
         <div style={{ position: 'fixed', bottom: 28, left: '50%', transform: 'translateX(-50%)', zIndex: 1100, background: T.ink, color: T.surface, padding: '10px 18px', borderRadius: 10, fontSize: 13, fontWeight: 600, fontFamily: F.body, boxShadow: '0 4px 20px rgba(0,0,0,.3)', maxWidth: '90vw', textAlign: 'center' }}>
           {genFeedback}
         </div>
+      )}
+
+      {/* 텍스트 인식(Vision) 결과 시트 */}
+      {visionOcr && (
+        <VisionTextSheet
+          lang={lang}
+          state={visionOcr}
+          onClose={() => setVisionOcr(null)}
+          onSaveNote={(text, pageNum) => {
+            addNote({ bookId: book.id, bookTitle: book.title, text: text.slice(0, 2000), page: pageNum, tags: ['OCR'] });
+            setNotes(getNotes().filter(n => n.bookId === book.id));
+            showGenFeedback(lang === 'ko' ? '✓ 메모로 저장됨' : '✓ Saved as note');
+          }}
+          onAskAI={() => {
+            setVisionOcr(null);
+            setScreen('ai'); // 인식 텍스트는 pageTextCache 를 통해 AI 컨텍스트로 사용됨
+          }}
+        />
       )}
 
       {quizData && (

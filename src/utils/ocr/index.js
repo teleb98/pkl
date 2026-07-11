@@ -1,12 +1,15 @@
 /* OCR provider 통합 — 설정/환경/키에 따라 최적 엔진 선택.
 
    우선순위 (ocrMode 설정 기준):
-   - 'auto'  (기본): Apple Vision(macOS) → Ollama(있으면) → Tesseract 로컬 → Cloud Vision → AI Vision
-   - 'local' : 로컬만 (Apple Vision → Ollama → Tesseract). 클라우드 전송 안 함(프라이버시)
+   - 'auto'  (기본): Apple Vision(macOS Electron) → 서버 Vision(자가호스팅 Mac)
+                     → Ollama(있으면) → Tesseract 로컬 → Cloud Vision → AI Vision
+   - 'local' : 로컬만 (Apple Vision → 서버 Vision → Ollama → Tesseract).
+               서버 Vision 은 자기 서버(같은 origin)로만 전송 — 외부 클라우드 없음
    - 'cloud' : Cloud Vision → AI Vision (기존 동작, 고정확)
 
    모든 provider 공통 입력: base64 이미지(데이터 URL 접두사 없음) → 텍스트 */
 import { ocrImageWithMacVision, isMacVisionAvailable } from './macVisionOcr.js';
+import { ocrImageWithServerVision, isServerVisionAvailable } from './serverVisionOcr.js';
 import { ocrImageWithTesseract } from './tesseractOcr.js';
 import { ocrImageWithOllama, isOllamaAvailable, pickBestVisionModel } from './ollamaOcr.js';
 import { ocrImageWithMediapipeGemma, isMediapipeGemmaAvailable, getGemmaModelUrl } from './mediapipeGemmaOcr.js';
@@ -38,6 +41,10 @@ export async function createOcr({ mode = 'auto', apiKeys = {}, lang = 'ko', call
   // Apple Vision (Electron macOS): 즉시·오프라인·한국어 고품질 → 로컬 체인 최우선
   if ((mode === 'auto' || mode === 'local') && await isMacVisionAvailable()) {
     chain.push(async (b64) => ocrImageWithMacVision(b64));
+  }
+  // 서버 Vision (자가호스팅 Mac): 웹/태블릿에서도 Mac Vision 품질 — 자기 서버로만 전송
+  else if ((mode === 'auto' || mode === 'local') && await isServerVisionAvailable()) {
+    chain.push(async (b64) => ocrImageWithServerVision(b64));
   }
   if (useOllama) {
     // 설치된 비전 모델 중 최적(Gemma 4 우선) 자동 선택. 없으면 기본 태그.
@@ -79,6 +86,7 @@ export function ocrPossible(mode = 'auto', apiKeys = {}) {
 }
 
 export { ocrImageWithMacVision, isMacVisionAvailable } from './macVisionOcr.js';
+export { ocrImageWithServerVision, isServerVisionAvailable } from './serverVisionOcr.js';
 export { ocrImageWithTesseract } from './tesseractOcr.js';
 export { ocrImageWithOllama, isOllamaAvailable, listOllamaVisionModels } from './ollamaOcr.js';
 export { ocrImageWithMediapipeGemma, isMediapipeGemmaAvailable, getGemmaModelUrl } from './mediapipeGemmaOcr.js';

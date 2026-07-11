@@ -11,9 +11,9 @@ function _ensure(bookId) {
   return _cache[bookId];
 }
 
-export function setPageText(bookId, pageNum, text) {
+export function setPageText(bookId, pageNum, text, { force = false } = {}) {
   const c = _ensure(bookId);
-  if (!c.pages[pageNum]) {
+  if (force || !c.pages[pageNum]) {
     c.pages[pageNum] = text;
   }
 }
