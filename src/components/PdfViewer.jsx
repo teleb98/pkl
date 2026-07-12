@@ -307,6 +307,9 @@ export const PdfViewer = forwardRef(function PdfViewer({ fileId, source = 'drive
         onTotalPages?.(pdf.numPages);
         setStatus('ready');
 
+        // 전체 스캔으로 저장된 전문이 있으면 메모리 캐시로 복원 (OCR 재실행 방지)
+        import('../utils/fullBookScan.js').then(m => m.hydrateBookText(fileId)).catch(() => {});
+
         // PDF 목차 추출 (챕터 범위 선택용)
         (async () => {
           try {

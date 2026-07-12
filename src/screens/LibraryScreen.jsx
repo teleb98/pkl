@@ -8,6 +8,7 @@ import { scanLocalBookMeta } from '../utils/localBookScan.js';
 import { printNotesAsPdf, downloadNotesAsMarkdown } from '../utils/exportNotes.js';
 import { BookCollectionPicker, CollectionManager } from '../components/CollectionManager.jsx';
 import { ShareModal } from '../components/ShareModal.jsx';
+import { FullScanButton } from '../components/FullScanButton.jsx';
 import { getLocalBooks, addLocalBook, addLocalBooksNative, removeLocalBook, localBookToBook, usesNativePicker, onElectronMenuOpenPdf, reloadLocalBookFromPath } from '../utils/localBooks.js';
 
 /* ── Color palette for Drive book covers ─────────────────── */
@@ -428,6 +429,9 @@ function BookDetailSheet({ book, lang, geminiKey, claudeKey, accessToken, onClos
               }
             </button>
           </div>
+
+          {/* 책 전체 텍스트 스캔 (Vision → IndexedDB 영구 저장) */}
+          <FullScanButton book={book} lang={lang} />
 
           {/* Notes export — PDF (print) + Markdown */}
           {(() => {

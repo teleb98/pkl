@@ -37,6 +37,10 @@ export async function ensureBookText(book, { maxPages = 50, onProgress, force = 
 
   // 이미 충분한 텍스트가 있으면 skip
   if (getDocumentText(book.id)) return true;
+  // 전체 스캔으로 영구 저장된 전문이 있으면 메모리로 복원 (PDF 재추출 불필요)
+  const { hydrateBookText } = await import('./fullBookScan.js');
+  await hydrateBookText(book.id);
+  if (getDocumentText(book.id)) return true;
   if (_inflight[book.id]) return _inflight[book.id];
   // 이미 추출 시도했고 텍스트가 안 나온 책(스캔본 등)은 재시도 안 함 (force 시 제외)
   if (!force && _attempted.has(book.id)) return false;

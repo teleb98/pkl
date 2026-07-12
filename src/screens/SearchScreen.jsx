@@ -5,6 +5,7 @@ import { Icon, ChipRow, ScreenHeader } from '../components.jsx';
 import { getNotes, getHighlights, getSearchHistory, pushSearchHistory, getBookIndex, getBookMeta } from '../store.js';
 import { searchAllText } from '../pageTextCache.js';
 import { getLocalBooks } from '../utils/localBooks.js';
+import { hydrateBookText } from '../utils/fullBookScan.js';
 
 function fmtDate(iso) {
   if (!iso) return '';
@@ -23,12 +24,23 @@ export function SearchScreen({ lang, onOpenBook }) {
   const [allHighlights, setAllHighlights] = useState([]);
   const [allBooks, setAllBooks] = useState([]);
 
+  const [hydrated, setHydrated] = useState(0); // 전문 복원 후 검색 재계산 트리거
+
   useEffect(() => {
     setHistory(getSearchHistory());
     setAllNotes(getNotes());
     setAllHighlights(getHighlights());
+    // Drive 인덱스 + 로컬 책 통합 — 로컬 책만 있어도 책/본문 검색 가능
     const index = getBookIndex();
-    setAllBooks(index.map(b => ({ ...b, ...getBookMeta(b.id) })));
+    const locals = getLocalBooks().filter(l => !index.some(b => b.id === l.id));
+    setAllBooks([...locals, ...index].map(b => ({ ...b, ...getBookMeta(b.id) })));
+    // 전체 스캔으로 저장된 전문을 메모리로 복원 → 앱 재시작 후에도 본문 검색 가능
+    (async () => {
+      const ids = [...new Set([...index.map(b => b.id), ...getLocalBooks().map(b => b.id)])];
+      let n = 0;
+      for (const id of ids) n += await hydrateBookText(id);
+      if (n > 0) setHydrated(n);
+    })();
   }, []);
 
   const filterOpts = [
@@ -47,7 +59,7 @@ export function SearchScreen({ lang, onOpenBook }) {
       return b?.aiTitle || b?.title || id;
     };
     return searchAllText(query, 5).map(h => ({ ...h, bookTitle: titleOf(h.bookId) }));
-  }, [query, filter, allBooks]);
+  }, [query, filter, allBooks, hydrated]); // eslint-disable-line
 
   const allItems = useMemo(() => [
     ...allHighlights.map(h => ({ ...h, type: 'highlight' })),

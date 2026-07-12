@@ -801,7 +801,7 @@ export default function App() {
 
   return (
     <ThemeContext.Provider value={{ T, F }}>
-      <div style={{ width: '100vw', height: '100vh', overflow: 'hidden', background: T.bg, fontFamily: F.body }}>
+      <div style={{ width: '100%', height: '100%', overflow: 'hidden', background: T.bg, fontFamily: F.body }}>
         {layout === 'mobile' ? (
           <MobileLayout settings={settings} setSettings={setSettings} userConfig={userConfig} onSaveConfig={saveConfig} onAuthError={refreshDriveToken} />
         ) : (

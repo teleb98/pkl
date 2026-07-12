@@ -1,5 +1,9 @@
 *, *::before, *::after { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 html, body, #root { margin: 0; padding: 0; height: 100%; }
+/* 모바일 브라우저: 100vh 는 주소창 영역을 포함해 하단 탭바가 잘림 → 동적 뷰포트(dvh) 사용 */
+@supports (height: 100dvh) {
+  html, body, #root { height: 100dvh; }
+}
 body {
   font-family: 'Pretendard Variable', 'Pretendard', 'DM Sans', system-ui, sans-serif;
   word-break: keep-all;

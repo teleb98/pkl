@@ -177,11 +177,13 @@ export async function reloadLocalBookFromPath(book) {
   return true;
 }
 
-/** 로컬 책 삭제 (인덱스 + 캐시) */
+/** 로컬 책 삭제 (인덱스 + PDF 캐시 + 전체 스캔 텍스트) */
 export async function removeLocalBook(bookId) {
   const books = getLocalBooks().filter(b => b.id !== bookId);
   saveLocalBooks(books);
   await deleteCachedPdf(bookId);
+  const { deleteBookText } = await import('./bookTextDb.js');
+  await deleteBookText(bookId);
 }
 
 /** Electron 메뉴 이벤트(menu:openPdf) 구독 헬퍼 */

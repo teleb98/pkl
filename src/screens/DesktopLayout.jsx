@@ -13,6 +13,7 @@ import { renderStatsCard, downloadStatsCard, STATS_THEMES, fmtMinutes, monthName
 import { backupBookToDrive } from '../utils/driveBackup.js';
 import { PdfViewer } from '../components/PdfViewer.jsx';
 import { VisionTextSheet } from '../components/VisionTextSheet.jsx';
+import { FullScanButton } from '../components/FullScanButton.jsx';
 import { KnowledgeScreen } from './KnowledgeScreen.jsx';
 import { RangeSelector } from '../components/RangeSelector.jsx';
 import { QuizModal } from '../components/QuizModal.jsx';
@@ -574,6 +575,11 @@ function BookDetailModal({ book, lang, geminiKey, claudeKey, accessToken, onClos
                 : <><Icon name="spark" size={12} /> {ko ? 'AI 분석' : 'AI Scan'}</>
               }
             </button>
+          </div>
+
+          {/* 책 전체 텍스트 스캔 (Vision → IndexedDB 영구 저장) */}
+          <div style={{ marginBottom: 8 }}>
+            <FullScanButton book={book} lang={lang} />
           </div>
 
           <div style={{ display: 'flex', gap: 6 }}>
