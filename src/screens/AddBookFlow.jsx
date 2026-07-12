@@ -2,15 +2,16 @@ import { useState, useEffect, useRef } from 'react';
 import { useTheme } from '../context.jsx';
 import { Button, Icon, BookCover } from '../components.jsx';
 import { addLocalBook, addLocalBooksNative, usesNativePicker } from '../utils/localBooks.js';
+import { DriveBookPicker } from '../components/DriveBookPicker.jsx';
 
 /* ════════════════════════════════════════════════════════════════
    Add Book / Scan flow
    ════════════════════════════════════════════════════════════════ */
 
-export function AddBookFlow({ lang, onCancel, onComplete }) {
+export function AddBookFlow({ lang, onCancel, onComplete, userConfig, onUpdateConfig }) {
   const { T, F } = useTheme();
-  const [step, setStep] = useState("source"); // source | capture | ocr | metadata | done
-  const [source, setSource] = useState(null); // 'scan' | 'pdf' | 'photos' | 'url'
+  const [step, setStep] = useState("source"); // source | drivePicker | capture | ocr | metadata | done
+  const [source, setSource] = useState(null); // 'scan' | 'pdf' | 'photos' | 'drive'
   const [pages, setPages] = useState([]); // captured pages
   const [progress, setProgress] = useState(0);
   const [importing, setImporting] = useState(false);
@@ -82,6 +83,21 @@ export function AddBookFlow({ lang, onCancel, onComplete }) {
     return () => clearInterval(id);
   }, [step]);
 
+  // DriveBookPicker 는 자체 헤더(브레드크럼/닫기/완료)를 가지므로 공용 탑바 없이 전체 화면 사용
+  if (step === "drivePicker") {
+    return (
+      <div style={{ position: "absolute", inset: "44px 0 0 0", background: T.bg, display: "flex", flexDirection: "column" }}>
+        <DriveBookPicker
+          lang={lang}
+          userConfig={userConfig}
+          onUpdateConfig={onUpdateConfig}
+          onClose={() => setStep("source")}
+          onDone={onComplete}
+        />
+      </div>
+    );
+  }
+
   return (
     <div style={{ position: "absolute", inset: "44px 0 0 0", background: T.bg, display: "flex", flexDirection: "column" }}>
       {/* Top bar */}
@@ -120,6 +136,8 @@ export function AddBookFlow({ lang, onCancel, onComplete }) {
       {step === "source" && <SourceStep lang={lang} importing={importing} setSource={setSource} onPick={s => {
         // 'pdf' = 실제 로컬 PDF 가져오기 (데모 OCR 우회)
         if (s === "pdf") { handleImportPdf(); return; }
+        // 'drive' = 실제 Google Drive 폴더 탐색기
+        if (s === "drive") { setStep("drivePicker"); return; }
         setSource(s);
         setStep(s === "scan" || s === "photos" ? "capture" : "ocr");
       }} />}
@@ -134,18 +152,19 @@ export function AddBookFlow({ lang, onCancel, onComplete }) {
 /* ── Source step ───────────────────────────────────────── */
 function SourceStep({ lang, onPick, importing }) {
   const { T, F } = useTheme();
-  // PDF 가져오기를 최상단·추천으로 (실제 동작). 나머지는 데모.
+  // PDF 가져오기 / Drive 탐색기는 실제 동작. 카메라 스캔·사진 라이브러리는 데모.
   const sources = [
     { k: "pdf",    icon: "📄", title: lang === "ko" ? "PDF 파일 가져오기" : "Import PDF",
       sub: lang === "ko" ? "이미 갖고 있는 PDF를 서재에 추가 (오프라인)" : "Add a PDF you already have (offline)",
       tag: lang === "ko" ? "추천" : "Recommended" },
+    { k: "drive",  icon: "🗂️", title: lang === "ko" ? "Google Drive에서 가져오기" : "Import from Google Drive",
+      sub: lang === "ko" ? "Drive 폴더를 탐색해 책 또는 폴더 단위로 추가" : "Browse your Drive and add books or whole folders",
+      tag: null },
     { k: "scan",   icon: "📷", title: lang === "ko" ? "카메라로 스캔" : "Scan with camera",
       sub: lang === "ko" ? "책을 페이지별로 촬영해 OCR 처리 (데모)" : "Photograph pages, then OCR (demo)",
       tag: null },
     { k: "photos", icon: "🖼", title: lang === "ko" ? "사진 라이브러리" : "From Photos",
       sub: lang === "ko" ? "기존에 촬영한 사진들에서 선택 (데모)" : "Pick existing photos (demo)", tag: null },
-    { k: "url",    icon: "🔗", title: lang === "ko" ? "Drive · URL에서" : "From Drive · URL",
-      sub: lang === "ko" ? "Drive 또는 인터넷에서 가져오기 (데모)" : "Pull from Drive or web (demo)", tag: null },
   ];
   return (
     <div style={{ flex: 1, overflowY: "auto", padding: "20px 22px 28px" }}>

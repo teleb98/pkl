@@ -10,6 +10,7 @@ import { BookCollectionPicker, CollectionManager } from '../components/Collectio
 import { ShareModal } from '../components/ShareModal.jsx';
 import { FullScanButton } from '../components/FullScanButton.jsx';
 import { getLocalBooks, addLocalBook, addLocalBooksNative, removeLocalBook, localBookToBook, usesNativePicker, onElectronMenuOpenPdf, reloadLocalBookFromPath } from '../utils/localBooks.js';
+import { getDriveBooks, driveBookToBook, removeDriveBook } from '../utils/driveBooks.js';
 
 /* ── Color palette for Drive book covers ─────────────────── */
 const PALETTE = [
@@ -151,7 +152,7 @@ function MobileAuthErrorOrRetry({ isAuthErr, error, lang, onRetry, onAuthError }
 const TYPE_LABELS_M = { '소설': { ko: '소설', en: 'Novel' }, novel: { ko: '소설', en: 'Novel' }, '기술서': { ko: '기술서', en: 'Technical' }, technical: { ko: '기술서', en: 'Technical' }, 'self-help': { ko: '자기계발', en: 'Self-help' }, '자기계발': { ko: '자기계발', en: 'Self-help' }, paper: { ko: '논문', en: 'Paper' }, '논문': { ko: '논문', en: 'Paper' }, 'work-doc': { ko: '업무문서', en: 'Work doc' }, '업무문서': { ko: '업무문서', en: 'Work doc' }, essay: { ko: '에세이', en: 'Essay' }, '에세이': { ko: '에세이', en: 'Essay' } };
 const LANG_LABELS_M = { ko: { ko: '한국어', en: 'Korean' }, en: { ko: '영어', en: 'English' }, ja: { ko: '일본어', en: 'Japanese' }, zh: { ko: '중국어', en: 'Chinese' } };
 
-function BookDetailSheet({ book, lang, geminiKey, claudeKey, accessToken, onClose, onRead, onAI, onMetaChange, onAuthError, onQueueChange, onCollectionsChange, onRemoveLocal }) {
+function BookDetailSheet({ book, lang, geminiKey, claudeKey, accessToken, onClose, onRead, onAI, onMetaChange, onAuthError, onQueueChange, onCollectionsChange, removable, onRemoveBook }) {
   const { T, F } = useTheme();
   const ko = lang === 'ko';
   const [inQueue, setInQueue] = useState(() => getReadQueue().some(b => b.id === book.id));
@@ -483,17 +484,21 @@ function BookDetailSheet({ book, lang, geminiKey, claudeKey, accessToken, onClos
             <button onClick={() => setShowShare(true)} style={{ flex: 1, fontSize: 12, color: T.inkLight, background: 'none', border: `1px solid ${T.border}`, borderRadius: 8, padding: '8px', cursor: 'pointer', fontFamily: F.body, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}>
               <Icon name="send" size={12} /> {ko ? '공유' : 'Share'}
             </button>
-            {isLocal && (
+            {removable && (
               <button
                 onClick={async () => {
-                  if (!window.confirm(ko ? '이 책을 기기에서 제거할까요?' : 'Remove this book from your device?')) return;
-                  await removeLocalBook(book.id);
-                  onRemoveLocal?.();
+                  const isDrive = book.source === 'drive';
+                  const msg = isDrive
+                    ? (ko ? '이 책을 서재에서 제거할까요? (Drive 원본은 삭제되지 않습니다)' : 'Remove this book from your library? (The file stays in Drive.)')
+                    : (ko ? '이 책을 기기에서 제거할까요?' : 'Remove this book from your device?');
+                  if (!window.confirm(msg)) return;
+                  if (isDrive) removeDriveBook(book.id); else await removeLocalBook(book.id);
+                  onRemoveBook?.();
                   onClose();
                 }}
                 style={{ flex: 1, fontSize: 12, color: '#C0392B', background: 'none', border: '1px solid #C0392B44', borderRadius: 8, padding: '8px', cursor: 'pointer', fontFamily: F.body, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}
               >
-                × {ko ? '기기에서 제거' : 'Remove'}
+                × {book.source === 'drive' ? (ko ? '서재에서 제거' : 'Remove') : (ko ? '기기에서 제거' : 'Remove')}
               </button>
             )}
           </div>
@@ -529,6 +534,7 @@ export function LibraryScreen({ lang, setScreen, userConfig, onAddBook, onOpenBo
 
   const [books, setBooks] = useState([]);
   const [localBooks, setLocalBooks] = useState(() => getLocalBooks());
+  const [driveBooksIdx, setDriveBooksIdx] = useState(() => getDriveBooks());
   const [localAdding, setLocalAdding] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -674,7 +680,14 @@ export function LibraryScreen({ lang, setScreen, userConfig, onAddBook, onOpenBo
 
   // 로컬 책도 Drive 책과 동일한 book 형태로 그리드/피처드에 표시
   const localAsBooks = useMemo(() => localBooks.map(localBookToBook), [localBooks, bookTick]); // eslint-disable-line
-  const allBooks = useMemo(() => [...localAsBooks, ...books], [localAsBooks, books]);
+  const driveAsBooks = useMemo(() => driveBooksIdx.map(driveBookToBook), [driveBooksIdx, bookTick]); // eslint-disable-line
+  // Drive 폴더 동기화 목록(books)에 이미 있는 파일은 수동 추가분에서 제외 (중복 표시 방지)
+  const driveManualOnly = useMemo(() => {
+    const synced = new Set(books.map(b => b.id));
+    return driveAsBooks.filter(b => !synced.has(b.id));
+  }, [driveAsBooks, books]);
+  const manualDriveIds = useMemo(() => new Set(driveBooksIdx.map(b => b.id)), [driveBooksIdx]);
+  const allBooks = useMemo(() => [...localAsBooks, ...driveManualOnly, ...books], [localAsBooks, driveManualOnly, books]);
 
   const filterOpts = [
     { key: 'all',       label: lang === 'ko' ? '전체' : 'All' },
@@ -968,7 +981,8 @@ export function LibraryScreen({ lang, setScreen, userConfig, onAddBook, onOpenBo
           onAuthError={onAuthError}
           onQueueChange={q => setReadQueue([...q])}
           onCollectionsChange={() => setCollections(getCollections())}
-          onRemoveLocal={() => { setLocalBooks(getLocalBooks()); setDetailBook(null); }}
+          removable={detailBook.source === 'local' || manualDriveIds.has(detailBook.id)}
+          onRemoveBook={() => { setLocalBooks(getLocalBooks()); setDriveBooksIdx(getDriveBooks()); setDetailBook(null); }}
         />
       )}
 

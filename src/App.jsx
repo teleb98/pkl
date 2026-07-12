@@ -682,7 +682,7 @@ function MobileLayout({ settings, setSettings, userConfig, onSaveConfig, onAuthE
       )}
       {view === 'addbook' && (
         <div style={{ flex: 1, background: T.bg, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-          <AddBookFlow lang={settings.lang} onCancel={() => setView('app')} onComplete={() => { setView('app'); setScreen('library'); }} />
+          <AddBookFlow lang={settings.lang} userConfig={userConfig} onUpdateConfig={onSaveConfig} onCancel={() => setView('app')} onComplete={() => { setView('app'); setScreen('library'); }} />
         </div>
       )}
       {view === 'app' && (
@@ -813,7 +813,7 @@ export default function App() {
             </div>
           ) : view === 'addbook' ? (
             <div style={{ width: '100%', height: '100%', background: T.bg, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-              <AddBookFlow lang={settings.lang} onCancel={() => { setView('app'); setScreen('library'); }} onComplete={() => { setView('app'); setScreen('library'); }} />
+              <AddBookFlow lang={settings.lang} userConfig={userConfig} onUpdateConfig={saveConfig} onCancel={() => { setView('app'); setScreen('library'); }} onComplete={() => { setView('app'); setScreen('library'); }} />
             </div>
           ) : (
             <div style={{ width: '100%', height: '100%', overflow: 'hidden', position: 'relative' }}>
