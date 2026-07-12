@@ -170,7 +170,7 @@ export function DesktopShell({ layout, lang, screen, setScreen, openDriveSave, u
         {screen === "search"    && <DesktopSearch lang={lang} isPC={isPC} onOpenBook={onOpenBook} />}
         {screen === "knowledge" && <DesktopKnowledge lang={lang} isPC={isPC} apiKeys={userConfig?.apiKeys} currentBook={currentBook} />}
         {screen === "goals"     && <DesktopGoals lang={lang} isPC={isPC} currentBook={currentBook} onOpenBook={onOpenBook} />}
-        {screen === "ai"        && <DesktopAI lang={lang} isPC={isPC} apiKeys={userConfig?.apiKeys} currentBook={currentBook} />}
+        {screen === "ai"        && <DesktopAI lang={lang} isPC={isPC} apiKeys={userConfig?.apiKeys} currentBook={currentBook} onShowSettings={onShowSettings} />}
       </div>
     </div>
   );
@@ -2676,7 +2676,7 @@ function buildDesktopSystemPrompt(mode, book, notes, highlights, lang, hasPageIm
     : `Reading assistant for 《${bookName}》.\n${noAccessEn}${ctx}\n\nAnswer clearly and concisely.`;
 }
 
-function DesktopAI({ lang, isPC, apiKeys, currentBook }) {
+function DesktopAI({ lang, isPC, apiKeys, currentBook, onShowSettings }) {
   const { T, F } = useTheme();
   const t = i18n[lang];
   const [tab, setTab] = useState("chat"); // "chat" | "compare"
@@ -2754,6 +2754,36 @@ function DesktopAI({ lang, isPC, apiKeys, currentBook }) {
               {lang === "ko" ? "서재에서 책을 열면 AI와 그 책에 대해 대화할 수 있어요." : "Open a book from your library to chat with AI about it."}
             </div>
           </div>
+        </div>
+      </>
+    );
+  }
+
+  /* AI 키 미설정 — Vision 스캔은 키 없이 되지만 채팅 생성은 Claude/Gemini 키가 필요.
+     예전에는 이 안내 없이 입력만 받고 전송 후에야 실패 메시지가 떴다(왕복 낭비). */
+  if (!hasKey) {
+    return (
+      <>
+        <DesktopHeader subtitle={currentBook.title} title={t.aiChat} />
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 16, padding: 40, textAlign: "center" }}>
+          <div style={{ width: 72, height: 72, borderRadius: 20, background: T.accentSoft, display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <Icon name="spark" size={32} color={T.accent} />
+          </div>
+          <div>
+            <div style={{ fontSize: 20, fontWeight: 600, color: T.ink, fontFamily: F.display, marginBottom: 8 }}>
+              {lang === "ko" ? "AI 채팅에는 API 키가 필요해요" : "AI chat needs an API key"}
+            </div>
+            <div style={{ fontSize: 14, color: T.inkLight, fontFamily: F.body, lineHeight: 1.65, maxWidth: 340 }}>
+              {lang === "ko"
+                ? "Vision 스캔·검색은 기기에서 바로 되지만, AI와의 대화는 Claude 또는 Gemini API 키가 있어야 실제 답변을 생성할 수 있어요."
+                : "Vision scanning and search work on-device, but chatting with AI needs a Claude or Gemini API key to generate real answers."}
+            </div>
+          </div>
+          {onShowSettings && (
+            <Button variant="accent" onClick={onShowSettings} style={{ padding: "11px 22px" }}>
+              {lang === "ko" ? "설정에서 API 키 추가" : "Add API key in Settings"}
+            </Button>
+          )}
         </div>
       </>
     );
