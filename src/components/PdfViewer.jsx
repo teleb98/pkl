@@ -4,7 +4,8 @@ import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import { useTheme } from '../context.jsx';
 import { setPageText, setViewedPage, setPageImage, setOutline, hasPageText } from '../pageTextCache.js';
 import { getCachedPdf, cachePdf, downloadWithProgress } from '../utils/pdfCache.js';
-import { reloadLocalBookFromPath } from '../utils/localBooks.js';
+import { reloadLocalBookFromPath, isElectron } from '../utils/localBooks.js';
+import { setBookMeta } from '../store.js';
 import { callAI } from '../aiClient.js';
 import { createOcr } from '../utils/ocr/index.js';
 
@@ -259,8 +260,10 @@ export const PdfViewer = forwardRef(function PdfViewer({ fileId, source = 'drive
 
     // 로컬 파일은 Drive 토큰 불필요 — 캐시(IndexedDB)에만 있음
     const isLocal = source === 'local';
-    const token = isLocal ? null : getDriveToken();
-    if (!isLocal && !token) { setErrMsg('auth'); setStatus('error'); return; }
+    // Drive 책도 Electron 로컬 사본(filePath)이 있으면 토큰/네트워크 없이 오프라인 로드 가능
+    const hasLocalCopy = !isLocal && isElectron() && !!book?.filePath;
+    const token = (isLocal || hasLocalCopy) ? null : getDriveToken();
+    if (!isLocal && !hasLocalCopy && !token) { setErrMsg('auth'); setStatus('error'); return; }
 
     async function loadPdf() {
       try {
@@ -284,15 +287,43 @@ export const PdfViewer = forwardRef(function PdfViewer({ fileId, source = 'drive
             return;
           }
           setFromCache(true);
-        } else {
-          // 캐시 미스 (Drive) — 다운로드 후 캐시 저장
+        } else if (hasLocalCopy) {
+          // Drive 책이지만 Electron 로컬 영구 사본이 있음 — 네트워크/토큰 불필요
+          const res = await window.electron.readPdf(book.filePath);
+          if (res.ok) {
+            arrayBuffer = res.buffer;
+            cachePdf(fileId, arrayBuffer); // IndexedDB 에도 재캐시(다음부터 더 빠르게)
+            setFromCache(true);
+          } else if (!getDriveToken()) {
+            // 로컬 사본도 깨졌고 토큰도 없음 — 재연결 필요
+            // (hasLocalCopy 경로에서는 위 token 을 null 로 뒀으므로 여기서 실시간 재확인)
+            setErrMsg('auth');
+            setStatus('error');
+            return;
+          }
+        }
+
+        // 로컬/로컬사본 어느 쪽으로도 못 구했으면 Drive 네트워크 다운로드
+        if (!arrayBuffer && !isLocal) {
+          const dlToken = token || getDriveToken();
+          if (!dlToken) { setErrMsg('auth'); setStatus('error'); return; }
           setStatus('downloading');
-          arrayBuffer = await downloadWithProgress(fileId, token, (pct) => {
+          arrayBuffer = await downloadWithProgress(fileId, dlToken, (pct) => {
             if (!cancelled) setProgress(pct);
           });
           if (cancelled) return;
           // 백그라운드에서 캐시 저장 (로딩 차단 안 함)
           cachePdf(fileId, arrayBuffer);
+          // Electron: 실제 파일로도 영구 저장 → IndexedDB 삭제/브라우저 정리에도 안전하게
+          // 오프라인 접근 가능해짐. 다음 로드부터는 위 hasLocalCopy 경로를 탄다.
+          // 주의: pdf.js getDocument() 가 아래에서 이 arrayBuffer 를 워커로 전송(detach)하므로
+          // 반드시 슬라이스한 복사본을 IPC로 넘긴다 (원본을 넘기면 레이스 컨디션으로 깨질 수 있음).
+          if (isElectron() && source === 'drive') {
+            const copy = arrayBuffer.slice(0);
+            window.electron.saveDrivePdf(`${fileId}.pdf`, copy)
+              .then(res => { if (res?.ok && res.path) setBookMeta(fileId, { filePath: res.path }); })
+              .catch(() => {});
+          }
         }
 
         if (cancelled) return;

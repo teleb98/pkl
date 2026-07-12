@@ -118,6 +118,30 @@ ipcMain.handle('fs:readPdf', async (_e, filePath) => {
 ipcMain.handle('system:isDark', () => nativeTheme.shouldUseDarkColors);
 ipcMain.handle('app:version', () => app.getVersion());
 
+// ── Drive PDF 로컬 영구 저장 ─────────────────────────────────────────
+// 다운로드한 Drive 파일을 앱 데이터 폴더에 실제 파일로 저장 — 이후부터는
+// Drive 토큰/네트워크 없이도 오프라인으로 열람 가능. IndexedDB 캐시가
+// 지워져도(브라우저 스토리지 정리 등) 이 파일은 남는다.
+const DRIVE_CACHE_DIR = path.join(app.getPath('userData'), 'drive-books');
+const MAX_DRIVE_PDF_BYTES = 200 * 1024 * 1024; // 200MB 상한
+
+ipcMain.handle('fs:saveDrivePdf', async (_e, { fileName, buffer }) => {
+  try {
+    if (!buffer || !buffer.byteLength) return { ok: false, error: 'empty-buffer' };
+    if (buffer.byteLength > MAX_DRIVE_PDF_BYTES) return { ok: false, error: 'too-large' };
+    // 파일명은 Drive fileId 기반으로 호출되므로 경로 탈출 문자만 제거하면 충분
+    const safeName = String(fileName || 'book.pdf').replace(/[\\/:*?"<>|]/g, '_');
+    if (!safeName.toLowerCase().endsWith('.pdf')) return { ok: false, error: 'not-pdf' };
+    fs.mkdirSync(DRIVE_CACHE_DIR, { recursive: true });
+    const dest = path.join(DRIVE_CACHE_DIR, safeName);
+    fs.writeFileSync(dest, Buffer.from(buffer));
+    _allowedPdfPaths.add(path.resolve(dest)); // 이후 fs:readPdf 로 재로딩 허용
+    return { ok: true, path: dest };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+});
+
 // ── Apple Vision OCR (macOS 로컬, 오프라인) ────────────────────────────
 const { runMacVisionOcr, isMacVisionSupported } = require('./macVision.cjs');
 ipcMain.handle('ocr:macVisionAvailable', () => isMacVisionSupported());

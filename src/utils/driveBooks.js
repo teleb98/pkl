@@ -42,7 +42,10 @@ export function removeDriveBook(id) {
   return next;
 }
 
-/** 인덱스 항목 → 서재 그리드용 book 객체 (Drive/로컬 책과 동일한 형태) */
+/** 인덱스 항목 → 서재 그리드용 book 객체 (Drive/로컬 책과 동일한 형태).
+ *  filePath 는 driveBooks 인덱스가 아닌 getBookMeta(범용 진행률 저장소)에서 읽는다 —
+ *  Electron에서 다운로드 후 PdfViewer 가 setBookMeta(id,{filePath}) 로 기록하며,
+ *  이렇게 하면 폴더-동기화 Drive 책(driveFileToBook)에도 동일한 방식이 적용된다. */
 export function driveBookToBook(db) {
   const meta = getBookMeta(db.id) || {};
   return {
@@ -52,6 +55,7 @@ export function driveBookToBook(db) {
     size: db.size,
     mimeType: db.mimeType,
     webViewLink: db.webViewLink,
+    filePath: meta.filePath || null, // Electron: 로컬 영구 사본 경로 (있으면 오프라인 접근 가능)
     status: meta.status || 'unread',
     progress: meta.progress || 0,
     lastPage: meta.lastPage || 0,

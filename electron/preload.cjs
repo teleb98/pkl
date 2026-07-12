@@ -8,6 +8,9 @@ contextBridge.exposeInMainWorld('electron', {
   /** 파일 경로 → ArrayBuffer */
   readPdf: (filePath) => ipcRenderer.invoke('fs:readPdf', filePath),
 
+  /** Drive에서 다운로드한 PDF를 앱 데이터 폴더에 영구 저장 → { ok, path } */
+  saveDrivePdf: (fileName, buffer) => ipcRenderer.invoke('fs:saveDrivePdf', { fileName, buffer }),
+
   /** 시스템 다크모드 여부 */
   isDark: () => ipcRenderer.invoke('system:isDark'),
 

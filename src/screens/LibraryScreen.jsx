@@ -101,6 +101,7 @@ function driveFileToBook(file) {
     modifiedTime: file.modifiedTime,
     size: file.size,
     mimeType: file.mimeType,
+    filePath: meta.filePath || null, // Electron: 다운로드 후 저장된 로컬 사본 경로 (있으면 오프라인 접근 가능)
   };
 }
 
@@ -432,7 +433,7 @@ function BookDetailSheet({ book, lang, geminiKey, claudeKey, accessToken, onClos
           </div>
 
           {/* 책 전체 텍스트 스캔 (Vision → IndexedDB 영구 저장) */}
-          <FullScanButton book={book} lang={lang} />
+          <FullScanButton book={book} lang={lang} geminiKey={geminiKey} />
 
           {/* Notes export — PDF (print) + Markdown */}
           {(() => {

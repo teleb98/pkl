@@ -7,10 +7,12 @@ import { scanBookMeta, buildMetaContext } from '../scanBook.js';
 import { scanLocalBookMeta } from '../utils/localBookScan.js';
 import { getPageText, getDocumentText, getPageImage, getTextForRange } from '../pageTextCache.js';
 import { ensureBookText } from '../utils/ensureBookText.js';
+import { queryBookIndex, formatRagContext } from '../utils/ragIndex.js';
 import { showError } from '../utils/toast.js';
-import { getBookMeta, setBookMeta, addNote, addHighlight, getNotes, getHighlights, deleteNote, deleteHighlight, getGoals, saveGoals, addSession, getSessions, getWeekStats, getSearchHistory, pushSearchHistory, getBookIndex, saveBookIndex, getAiChat, saveAiChat, getBookmarks, toggleBookmark, getReaderSettings, saveReaderSettings, getMonthStats, getYearStats, getBackupSettings, appendBackupLog, getNotesByBook, getHighlightsByBook, getVocabulary, addVocabularyEntry, getPdfAnnotations, addPdfAnnotation } from '../store.js';
+import { getBookMeta, setBookMeta, addNote, addHighlight, getNotes, getHighlights, deleteNote, deleteHighlight, getGoals, saveGoals, addSession, getSessions, getWeekStats, getSearchHistory, pushSearchHistory, getBookIndex, saveBookIndex, getAiChat, saveAiChat, getBookmarks, toggleBookmark, getReaderSettings, saveReaderSettings, getMonthStats, getYearStats, getBackupSettings, appendBackupLog, appendProgressSyncLog, getNotesByBook, getHighlightsByBook, getVocabulary, addVocabularyEntry, getPdfAnnotations, addPdfAnnotation } from '../store.js';
 import { renderStatsCard, downloadStatsCard, STATS_THEMES, fmtMinutes, monthName as monthLabelFn } from '../utils/statsCard.js';
 import { backupBookToDrive } from '../utils/driveBackup.js';
+import { syncProgressWithDrive } from '../utils/progressSync.js';
 import { PdfViewer } from '../components/PdfViewer.jsx';
 import { VisionTextSheet } from '../components/VisionTextSheet.jsx';
 import { FullScanButton } from '../components/FullScanButton.jsx';
@@ -580,7 +582,7 @@ function BookDetailModal({ book, lang, geminiKey, claudeKey, accessToken, onClos
 
           {/* 책 전체 텍스트 스캔 (Vision → IndexedDB 영구 저장) */}
           <div style={{ marginBottom: 8 }}>
-            <FullScanButton book={book} lang={lang} />
+            <FullScanButton book={book} lang={lang} geminiKey={geminiKey} />
           </div>
 
           <div style={{ display: 'flex', gap: 6 }}>
@@ -690,6 +692,7 @@ function driveFileToBook(file) {
     webViewLink: file.webViewLink,
     modifiedTime: file.modifiedTime,
     size: file.size,
+    filePath: meta.filePath || null, // Electron: 다운로드 후 저장된 로컬 사본 경로 (있으면 오프라인 접근 가능)
   };
 }
 function fmtDate(iso) {
@@ -1374,7 +1377,13 @@ function DesktopReader({ lang, setScreen, openDriveSave, isPC, currentBook, apiK
       const bookHighlights = getHighlights().filter(h => h.bookId === book.id);
       // Use image when current page has no extractable text (scanned PDF)
       const pageImg = currentPageData?.imageBase64 && !currentPageData?.text ? currentPageData.imageBase64 : null;
-      const systemPrompt = buildDesktopSystemPrompt(aiMode, book, bookNotes, bookHighlights, lang, !!pageImg);
+      // RAG: 질문과 가장 관련 있는 구절을 벡터 인덱스에서 검색해 프롬프트에 추가 (인덱스 없으면 조용히 스킵)
+      let ragCtx = "";
+      try {
+        const hits = await queryBookIndex(book.id, text, { geminiKey: apiKeys?.gemini, topK: 5 });
+        ragCtx = formatRagContext(hits, lang);
+      } catch { /* RAG 조회 실패는 무시 — 기존 문서 컨텍스트로 계속 진행 */ }
+      const systemPrompt = buildDesktopSystemPrompt(aiMode, book, bookNotes, bookHighlights, lang, !!pageImg) + ragCtx;
       const effectiveKeys = activeModel === "claude" ? { claude: apiKeys.claude } : { gemini: apiKeys.gemini };
       const response = await callAI(effectiveKeys, systemPrompt, history, text, pageImg);
       setAiMessages(prev => {
@@ -2217,6 +2226,12 @@ function DesktopGoals({ lang, isPC, currentBook }) {
         backupBookToDrive(bs.writeToken, currentBook, notes, highlights)
           .then(() => appendBackupLog({ status: 'ok', succeeded: 1, failed: 0, auto: true }))
           .catch(e => appendBackupLog({ status: 'error', error: e.message, auto: true }));
+      }
+      // 읽은 위치 자동 동기화 — 메모 백업과 별개 토글, 같은 writeToken 재사용
+      if (bs.autoProgressSync && bs.writeToken) {
+        syncProgressWithDrive(bs.writeToken)
+          .then(({ pulled, total }) => appendProgressSyncLog({ status: 'ok', pulled, total, auto: true }))
+          .catch(e => appendProgressSyncLog({ status: 'error', error: e.message, auto: true }));
       }
     }
   };

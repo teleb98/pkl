@@ -18,8 +18,9 @@ import { OnboardingFlow } from './screens/OnboardingFlow.jsx';
 import { AddBookFlow } from './screens/AddBookFlow.jsx';
 import { DesktopShell } from './screens/DesktopLayout.jsx';
 import { PklMark } from './Logo.jsx';
-import { getBackupSettings, saveBackupSettings, appendBackupLog, getLastBackupTime, getNotesByBook, getHighlightsByBook, getBookIndex } from './store.js';
+import { getBackupSettings, saveBackupSettings, appendBackupLog, getLastBackupTime, appendProgressSyncLog, getLastProgressSyncTime, getNotesByBook, getHighlightsByBook, getBookIndex } from './store.js';
 import { backupAllToDrive, DriveError } from './utils/driveBackup.js';
+import { syncProgressWithDrive } from './utils/progressSync.js';
 import { getCacheInfo, clearAllCache, deleteCachedPdf } from './utils/pdfCache.js';
 
 /* ── Settings panel ───────────────────────────────────────────── */
@@ -66,6 +67,34 @@ function SettingsPanel({ settings, setSettings, onClose, userConfig, onUpdateCon
     const next = { ...backupSettings, ...patch };
     setBackupSettings(next);
     saveBackupSettings(next);
+  };
+
+  // 읽은 위치(진행률) 전용 동기화 — 메모/하이라이트 백업과 별개, 같은 writeToken 재사용
+  const [progressSyncState, setProgressSyncState] = useState('idle'); // idle | running | ok | error
+  const [progressSyncMsg, setProgressSyncMsg] = useState('');
+  const lastProgressSyncTime = getLastProgressSyncTime();
+
+  const runProgressSync = async () => {
+    const token = backupSettings.writeToken;
+    if (!token) { requestWriteAccess(); return; }
+    setProgressSyncState('running');
+    setProgressSyncMsg('');
+    try {
+      const { pulled, total } = await syncProgressWithDrive(token);
+      appendProgressSyncLog({ status: 'ok', pulled, total });
+      setProgressSyncState('ok');
+      setProgressSyncMsg(lang === 'ko' ? `✓ 동기화 완료 (${total}권)` : `✓ Synced (${total} books)`);
+    } catch (e) {
+      appendProgressSyncLog({ status: 'error', error: e.message });
+      if (e instanceof DriveError && e.status === 401) {
+        saveBackup({ writeToken: null });
+        setProgressSyncMsg(lang === 'ko' ? '토큰 만료. 다시 연결해주세요.' : 'Token expired. Reconnect.');
+      } else {
+        setProgressSyncMsg(lang === 'ko' ? `오류: ${e.message}` : `Error: ${e.message}`);
+      }
+      setProgressSyncState('error');
+    }
+    setTimeout(() => setProgressSyncState('idle'), 3000);
   };
 
   const saveKeys = () => {
@@ -516,6 +545,56 @@ function SettingsPanel({ settings, setSettings, onClose, userConfig, onUpdateCon
               ? '메모·하이라이트가 Google Drive의 PKL/backups/ 폴더에 Markdown으로 저장됩니다.'
               : 'Notes & highlights are saved as Markdown to PKL/backups/ in your Drive.'}
           </p>
+        </div>
+
+        {/* 읽은 위치 동기화 — 메모 백업과 별개, 같은 writeToken 재사용 */}
+        <div style={{ borderTop: `1px solid ${T.border}`, paddingTop: 18 }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: T.inkLight, letterSpacing: 1.2, textTransform: 'uppercase', fontFamily: F.body, marginBottom: 12 }}>
+            {lang === 'ko' ? '읽은 위치 동기화' : 'Reading Progress Sync'}
+          </div>
+
+          <div style={{ background: T.surfaceAlt, borderRadius: 12, padding: '12px 14px', border: `1px solid ${T.border}`, marginBottom: 10 }}>
+            <div style={{ fontSize: 12, color: T.inkMid, fontFamily: F.body, lineHeight: 1.55, marginBottom: 10 }}>
+              {lang === 'ko'
+                ? '메모·하이라이트 내용이 아니라 "어디까지 읽었는지"(진행률·마지막 페이지)만 작은 파일로 동기화해 다른 기기에서 이어 읽을 수 있게 합니다.'
+                : "Syncs only reading position (progress % and last page) — not notes or highlights — so you can continue on another device."}
+              {lastProgressSyncTime && (
+                <span style={{ display: 'block', marginTop: 6, color: T.inkLight }}>
+                  {lang === 'ko' ? '마지막 동기화: ' : 'Last synced: '}
+                  {new Date(lastProgressSyncTime).toLocaleString(lang === 'ko' ? 'ko-KR' : 'en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                </span>
+              )}
+            </div>
+            <button
+              onClick={runProgressSync}
+              disabled={progressSyncState === 'running'}
+              style={{ width: '100%', padding: '10px', borderRadius: 10, border: 'none', background: progressSyncState === 'ok' ? '#16A34A' : progressSyncState === 'error' ? '#DC2626' : T.accent, color: '#fff', fontSize: 13, fontWeight: 600, fontFamily: F.body, cursor: progressSyncState === 'running' ? 'default' : 'pointer', opacity: progressSyncState === 'running' ? 0.7 : 1 }}
+            >
+              {progressSyncState === 'running'
+                ? (lang === 'ko' ? '⏳ 동기화 중…' : '⏳ Syncing…')
+                : progressSyncState === 'ok' ? progressSyncMsg
+                : progressSyncState === 'error' ? (lang === 'ko' ? '다시 시도' : 'Retry')
+                : (backupSettings.writeToken
+                    ? (lang === 'ko' ? '🔄 지금 동기화' : '🔄 Sync Now')
+                    : (lang === 'ko' ? '🔗 Drive 연결 & 동기화' : '🔗 Connect & Sync'))}
+            </button>
+            {progressSyncMsg && progressSyncState !== 'ok' && (
+              <p style={{ margin: '6px 0 0', fontSize: 11, color: progressSyncState === 'error' ? '#DC2626' : T.inkLight, fontFamily: F.body }}>{progressSyncMsg}</p>
+            )}
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: T.surfaceAlt, borderRadius: 10, border: `1px solid ${T.border}` }}>
+            <div>
+              <div style={{ fontSize: 12, fontWeight: 600, color: T.ink, fontFamily: F.body }}>{lang === 'ko' ? '세션 종료 시 자동 동기화' : 'Auto-sync on session end'}</div>
+              <div style={{ fontSize: 10, color: T.inkLight, fontFamily: F.body, marginTop: 1 }}>{lang === 'ko' ? '독서 세션이 끝날 때 읽은 위치를 자동으로 동기화' : 'Auto-sync reading position when a session ends'}</div>
+            </div>
+            <button
+              onClick={() => saveBackup({ autoProgressSync: !backupSettings.autoProgressSync })}
+              style={{ width: 42, height: 24, borderRadius: 12, border: 'none', background: backupSettings.autoProgressSync ? T.accent : T.border, cursor: 'pointer', position: 'relative', flexShrink: 0, transition: 'background .2s' }}
+            >
+              <span style={{ position: 'absolute', top: 3, left: backupSettings.autoProgressSync ? 20 : 3, width: 18, height: 18, borderRadius: '50%', background: '#fff', transition: 'left .2s' }} />
+            </button>
+          </div>
         </div>
 
         {/* API Keys */}

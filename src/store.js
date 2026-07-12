@@ -21,7 +21,10 @@ export function getBookMeta(id) {
 }
 export function setBookMeta(id, patch) {
   const cur = getBookMeta(id);
-  localStorage.setItem(`pkl_book_${id}`, JSON.stringify({ ...cur, ...patch }));
+  // updatedAt 은 로컬 변경 시 자동 스탬프 — Drive 진행률 동기화(progressSync.js)가
+  // 원격 값을 그대로 적용할 때는 patch.updatedAt 을 명시해 덮어쓰지 않게 한다.
+  const updatedAt = patch.updatedAt !== undefined ? patch.updatedAt : Date.now();
+  localStorage.setItem(`pkl_book_${id}`, JSON.stringify({ ...cur, ...patch, updatedAt }));
 }
 
 // Notes  [{ id, bookId, bookTitle, text, page, date }]
@@ -498,12 +501,13 @@ const BACKUP_LOG_KEY = 'pkl_backup_log';
 export function getBackupSettings() {
   try {
     return JSON.parse(localStorage.getItem(BACKUP_SETTINGS_KEY) || 'null') || {
-      autoBackup: false,   // 세션 종료 시 자동 백업
+      autoBackup: false,   // 세션 종료 시 자동 백업 (메모·하이라이트 마크다운)
+      autoProgressSync: false, // 세션 종료 시 읽은 위치(진행률) 자동 동기화 — 같은 writeToken 재사용
       writeToken: null,    // drive.file 스코프 토큰
       writeTokenExpiresAt: null,
     };
   } catch {
-    return { autoBackup: false, writeToken: null, writeTokenExpiresAt: null };
+    return { autoBackup: false, autoProgressSync: false, writeToken: null, writeTokenExpiresAt: null };
   }
 }
 
@@ -528,6 +532,28 @@ export function appendBackupLog(entry) {
 /** 마지막 성공 백업 시각 (ms) */
 export function getLastBackupTime() {
   const log = getBackupLog().filter(e => e.status === 'ok');
+  return log[0]?.ts || null;
+}
+
+/* ── 읽은 위치(진행률) 전용 Drive 동기화 이력 ──────────────
+   메모·하이라이트 백업과는 별개 — "어디까지 읽었는지"만 작은 JSON으로
+   Drive PKL 폴더에 동기화(progressSync.js). 같은 writeToken 을 재사용한다. */
+const PROGRESS_SYNC_LOG_KEY = 'pkl_progress_sync_log';
+
+export function getProgressSyncLog() {
+  try { return JSON.parse(localStorage.getItem(PROGRESS_SYNC_LOG_KEY) || '[]'); } catch { return []; }
+}
+
+export function appendProgressSyncLog(entry) {
+  try {
+    const log = getProgressSyncLog();
+    log.unshift({ ...entry, ts: Date.now() });
+    localStorage.setItem(PROGRESS_SYNC_LOG_KEY, JSON.stringify(log.slice(0, 20)));
+  } catch {}
+}
+
+export function getLastProgressSyncTime() {
+  const log = getProgressSyncLog().filter(e => e.status === 'ok');
   return log[0]?.ts || null;
 }
 

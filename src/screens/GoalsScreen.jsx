@@ -8,9 +8,10 @@ import {
   computeReadingSpeed, estimateCompletion,
   getNotificationSettings, saveNotificationSettings,
   getMonthStats, getYearStats,
-  getBackupSettings, appendBackupLog, getNotesByBook, getHighlightsByBook,
+  getBackupSettings, appendBackupLog, appendProgressSyncLog, getNotesByBook, getHighlightsByBook,
 } from '../store.js';
 import { backupBookToDrive } from '../utils/driveBackup.js';
+import { syncProgressWithDrive } from '../utils/progressSync.js';
 import { renderStatsCard, downloadStatsCard, STATS_THEMES, fmtMinutes, monthName as monthLabel } from '../utils/statsCard.js';
 import { getWeeklyCoachData, generateCoachPrompt } from '../utils/readingCoach.js';
 import { callAI } from '../aiClient.js';
@@ -172,8 +173,14 @@ export function GoalsScreen({ lang, currentBook, onOpenBook, apiKeys }) {
         const notes = getNotesByBook(currentBook.id);
         const highlights = getHighlightsByBook(currentBook.id);
         backupBookToDrive(bs.writeToken, currentBook, notes, highlights)
-          .then(r => appendBackupLog({ status: 'ok', succeeded: 1, failed: 0, auto: true }))
+          .then(() => appendBackupLog({ status: 'ok', succeeded: 1, failed: 0, auto: true }))
           .catch(e => appendBackupLog({ status: 'error', error: e.message, auto: true }));
+      }
+      // 읽은 위치 자동 동기화 — 메모 백업과 별개 토글, 같은 writeToken 재사용
+      if (bs.autoProgressSync && bs.writeToken) {
+        syncProgressWithDrive(bs.writeToken)
+          .then(({ pulled, total }) => appendProgressSyncLog({ status: 'ok', pulled, total, auto: true }))
+          .catch(e => appendProgressSyncLog({ status: 'error', error: e.message, auto: true }));
       }
     }
   };

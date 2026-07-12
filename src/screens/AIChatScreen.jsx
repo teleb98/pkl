@@ -7,6 +7,7 @@ import { BookCompare } from '../components/BookCompare.jsx';
 import { buildMetaContext } from '../scanBook.js';
 import { getPageText, getDocumentText, getPageImage } from '../pageTextCache.js';
 import { ensureBookText } from '../utils/ensureBookText.js';
+import { queryBookIndex, formatRagContext } from '../utils/ragIndex.js';
 import { showError } from '../utils/toast.js';
 
 async function callClaude(apiKey, systemPrompt, history, userMsg, pageImageBase64 = null) {
@@ -166,7 +167,13 @@ export function AIChatScreen({ lang, apiKeys, currentBook, onOpenBook, setScreen
       const cachedImg = getPageImage(currentBook.id);
       const docText = getDocumentText(currentBook.id);
       const pageImg = cachedImg && !docText ? cachedImg.base64 : null;
-      const systemPrompt = buildSystemPrompt(mode, currentBook, notes, highlights, lang, !!pageImg);
+      // RAG: 질문과 가장 관련 있는 구절을 벡터 인덱스에서 검색해 프롬프트에 추가 (인덱스 없으면 조용히 스킵)
+      let ragCtx = '';
+      try {
+        const hits = await queryBookIndex(currentBook.id, txt, { geminiKey: apiKeys?.gemini, topK: 5 });
+        ragCtx = formatRagContext(hits, lang);
+      } catch { /* RAG 조회 실패는 무시 — 기존 문서 컨텍스트로 계속 진행 */ }
+      const systemPrompt = buildSystemPrompt(mode, currentBook, notes, highlights, lang, !!pageImg) + ragCtx;
       let reply;
       if (apiKeys?.claude) reply = await callClaude(apiKeys.claude, systemPrompt, history, txt, pageImg);
       else if (apiKeys?.gemini) reply = await callGemini(apiKeys.gemini, systemPrompt, history, txt, pageImg);

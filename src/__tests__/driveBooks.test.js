@@ -119,4 +119,16 @@ describe('driveBooks — 수동 추가 인덱스', () => {
     expect(book.status).toBe('unread');
     expect(book.progress).toBe(0);
   });
+
+  it('filePath 없으면 null (Electron 로컬 사본 미확보 상태)', () => {
+    addDriveBooks([FILE]);
+    expect(driveBookToBook(getDriveBooks()[0]).filePath).toBeNull();
+  });
+
+  it('filePath 는 driveBooks 인덱스가 아닌 getBookMeta(범용 저장소)에서 읽는다', () => {
+    addDriveBooks([FILE]);
+    setBookMeta('d1', { filePath: '/Users/x/drive-books/d1.pdf' });
+    const book = driveBookToBook(getDriveBooks()[0]);
+    expect(book.filePath).toBe('/Users/x/drive-books/d1.pdf');
+  });
 });
