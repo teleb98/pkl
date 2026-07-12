@@ -71,7 +71,8 @@ export function getCollections() {
   try { return JSON.parse(localStorage.getItem(COLLECTIONS_KEY) || '[]'); }
   catch { return []; }
 }
-function saveCollections(list) {
+// librarySync.js 가 병합 결과를 통째로 반영할 때 사용(개별 mutator 우회)
+export function saveCollections(list) {
   localStorage.setItem(COLLECTIONS_KEY, JSON.stringify(list));
   return list;
 }
@@ -578,4 +579,48 @@ export function deletePdfAnnotation(bookId, id) {
   const annotations = getPdfAnnotations(bookId).filter(a => a.id !== id);
   savePdfAnnotations(bookId, annotations);
   return annotations;
+}
+
+/* ── 형광펜 주석을 하이라이트로 통합 조회 ───────────────────
+   pkl_highlights(텍스트 선택 기반)와 pkl_annot_<bookId>(PDF 좌표 기반
+   형광펜)는 서로 다른 저장소라, 이 함수 없이는 검색·내보내기·AI 컨텍스트·
+   Drive 백업 어디에도 형광펜이 노출되지 않았다. 아래 함수들로 항상 병합해
+   조회한다(원본 저장소는 그대로 — 뷰어의 오버레이 렌더링은 rects 가 필요
+   하므로 getPdfAnnotations 를 계속 사용). */
+function annotationToHighlight(a) {
+  return {
+    id: `annot-${a.id}`,
+    bookId: a.bookId,
+    text: (a.text || '').trim() || '(PDF 형광펜 — 텍스트 없음)',
+    color: a.color,
+    page: a.pageNum,
+    date: new Date(a.createdAt).toISOString(),
+    isPdfAnnotation: true,
+  };
+}
+
+/** 책 하나의 하이라이트(텍스트 선택 + PDF 형광펜) 통합 조회 */
+export function getAllHighlightsByBook(bookId) {
+  return [...getHighlightsByBook(bookId), ...getPdfAnnotations(bookId).map(annotationToHighlight)];
+}
+
+/** 모든 책의 PDF 형광펜 주석 (bookId 별로 분리 저장돼 있어 localStorage 를 스캔).
+ *  Object.keys(localStorage) 대신 length/key(i) 를 쓴다 — 일부 환경(테스트 목 등)의
+ *  localStorage 구현은 자체 속성만 열거 가능해 Object.keys 로는 저장된 키가 안 잡힌다. */
+export function getAllPdfAnnotations() {
+  const out = [];
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i);
+    if (!key || !key.startsWith('pkl_annot_')) continue;
+    try {
+      const list = JSON.parse(localStorage.getItem(key) || '[]');
+      for (const a of list) out.push(a);
+    } catch { /* 손상된 항목은 스킵 */ }
+  }
+  return out;
+}
+
+/** 전체 하이라이트(텍스트 선택 + PDF 형광펜) 통합 조회 — 검색 화면용 */
+export function getAllHighlightsMerged() {
+  return [...getHighlights(), ...getAllPdfAnnotations().map(annotationToHighlight)];
 }

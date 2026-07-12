@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect } from 'react';
 import { i18n } from '../data.js';
 import { useTheme } from '../context.jsx';
 import { Icon, ChipRow, ScreenHeader } from '../components.jsx';
-import { getNotes, getHighlights, getSearchHistory, pushSearchHistory, getBookIndex, getBookMeta } from '../store.js';
+import { getNotes, getAllHighlightsMerged, getSearchHistory, pushSearchHistory, getBookIndex, getBookMeta } from '../store.js';
 import { searchAllText } from '../pageTextCache.js';
 import { getLocalBooks } from '../utils/localBooks.js';
 import { hydrateBookText } from '../utils/fullBookScan.js';
@@ -29,7 +29,7 @@ export function SearchScreen({ lang, onOpenBook }) {
   useEffect(() => {
     setHistory(getSearchHistory());
     setAllNotes(getNotes());
-    setAllHighlights(getHighlights());
+    setAllHighlights(getAllHighlightsMerged());
     // Drive 인덱스 + 로컬 책 통합 — 로컬 책만 있어도 책/본문 검색 가능
     const index = getBookIndex();
     const locals = getLocalBooks().filter(l => !index.some(b => b.id === l.id));

@@ -142,6 +142,22 @@ ipcMain.handle('fs:saveDrivePdf', async (_e, { fileName, buffer }) => {
   }
 });
 
+// 서재에서 Drive 책을 제거할 때 drive-books/ 에 남은 로컬 사본도 정리(고아 파일 방지).
+// DRIVE_CACHE_DIR 내부 파일만 삭제 허용 — 임의 경로 삭제로 오용되지 않도록 제한.
+ipcMain.handle('fs:deleteDrivePdf', async (_e, filePath) => {
+  try {
+    const resolved = path.resolve(String(filePath || ''));
+    if (!resolved.startsWith(path.resolve(DRIVE_CACHE_DIR) + path.sep)) {
+      return { ok: false, error: 'outside-drive-cache-dir' };
+    }
+    _allowedPdfPaths.delete(resolved);
+    if (fs.existsSync(resolved)) fs.unlinkSync(resolved);
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+});
+
 // ── Apple Vision OCR (macOS 로컬, 오프라인) ────────────────────────────
 const { runMacVisionOcr, isMacVisionSupported } = require('./macVision.cjs');
 ipcMain.handle('ocr:macVisionAvailable', () => isMacVisionSupported());

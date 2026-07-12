@@ -3,7 +3,7 @@ import { i18n } from '../data.js';
 import { useTheme } from '../context.jsx';
 import { ChipRow, Button, Icon, ScreenHeader } from '../components.jsx';
 import {
-  getNotes, getHighlights, deleteNote, deleteHighlight,
+  getNotes, getAllHighlightsMerged, getAllHighlightsByBook, deleteNote, deleteHighlight,
   getFlashcards, saveFlashcards, addFlashcard, deleteFlashcard, markFlashcard,
   getVocabulary, addVocabularyEntry, deleteVocabularyEntry,
   getBookIndex,
@@ -130,7 +130,7 @@ export function KnowledgeScreen({ lang, apiKeys, currentBook }) {
 
   const reload = () => {
     const notes = getNotes().map(n => ({ ...n, type: 'note' }));
-    const highlights = getHighlights().map(h => ({ ...h, type: 'highlight' }));
+    const highlights = getAllHighlightsMerged().map(h => ({ ...h, type: 'highlight' }));
     setItems([...highlights, ...notes].sort((a, b) => new Date(b.date) - new Date(a.date)));
   };
 
@@ -210,7 +210,7 @@ export function KnowledgeScreen({ lang, apiKeys, currentBook }) {
   const generateFlashcards = async () => {
     if (!fcBook || !apiKeys?.claude && !apiKeys?.gemini) return;
     const notes = getNotes().filter(n => n.bookId === fcBook).slice(0, 20);
-    const highlights = getHighlights().filter(h => h.bookId === fcBook).slice(0, 20);
+    const highlights = getAllHighlightsByBook(fcBook).slice(0, 20);
     if (notes.length + highlights.length === 0) { setFcError(lang === 'ko' ? '메모나 하이라이트가 없어요.' : 'No notes or highlights found.'); return; }
     setFcGenerating(true); setFcError('');
     const bookTitle = books.find(b => b.id === fcBook)?.title || '';
@@ -426,7 +426,7 @@ export function KnowledgeScreen({ lang, apiKeys, currentBook }) {
                           const bookId = gItems[0].bookId;
                           const book = { id: bookId, title: groupName };
                           const allNotes = getNotes().filter(n => n.bookId === bookId);
-                          const allHls = getHighlights().filter(h => h.bookId === bookId);
+                          const allHls = getAllHighlightsByBook(bookId);
                           return (
                             <>
                               <button

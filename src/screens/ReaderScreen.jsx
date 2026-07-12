@@ -2,7 +2,8 @@ import { useState, useEffect, useRef } from 'react';
 import { i18n } from '../data.js';
 import { useTheme } from '../context.jsx';
 import { Button, Icon, ProgressBar, ScreenHeader } from '../components.jsx';
-import { getBookMeta, setBookMeta, addNote, addHighlight, getNotes, getHighlights, addSession, getAiChat, saveAiChat, getBookmarks, toggleBookmark, getReaderSettings, saveReaderSettings } from '../store.js';
+import { getBookMeta, setBookMeta, addNote, addHighlight, getNotes, getAllHighlightsByBook, addSession, getAiChat, saveAiChat, getBookmarks, toggleBookmark, getReaderSettings, saveReaderSettings } from '../store.js';
+import { scheduleProgressAutoSync } from '../utils/autoProgressSync.js';
 import { PdfViewer } from '../components/PdfViewer.jsx';
 import { TextSelectionAI } from '../components/TextSelectionAI.jsx';
 import { WordDefinition } from '../components/WordDefinition.jsx';
@@ -468,7 +469,7 @@ export function ReaderScreen({ lang, setScreen, openDriveSave, currentBook, apiK
   useEffect(() => {
     if (!book) return;
     setNotes(getNotes().filter(n => n.bookId === book.id));
-    setHighlights(getHighlights().filter(h => h.bookId === book.id));
+    setHighlights(getAllHighlightsByBook(book.id));
   }, [book?.id, refreshKey]);
 
   /* Re-read meta fresh on each render */
@@ -492,6 +493,7 @@ export function ReaderScreen({ lang, setScreen, openDriveSave, currentBook, apiK
     setPdfPage(newPage);
     setSaveFeedback(true);
     setRefreshKey(k => k + 1);
+    scheduleProgressAutoSync(); // 세션 타이머 없이 페이지만 넘겨도 진행률 동기화되도록(디바운스)
     setTimeout(() => setSaveFeedback(false), 1400);
   };
   adjustPageRef.current = adjustPage;
@@ -565,6 +567,7 @@ export function ReaderScreen({ lang, setScreen, openDriveSave, currentBook, apiK
     if (navigatedPage) setPdfPage(navigatedPage);
     setSaveFeedback(true);
     setRefreshKey(k => k + 1);
+    scheduleProgressAutoSync();
     setTimeout(() => setSaveFeedback(false), 1400);
   };
 

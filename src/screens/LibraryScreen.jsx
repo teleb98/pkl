@@ -2,15 +2,17 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { i18n } from '../data.js';
 import { useTheme } from '../context.jsx';
 import { ProgressBar, Button, SectionLabel, Icon, ChipRow, SyncBadge, ScreenHeader } from '../components.jsx';
-import { getBookMeta, setBookMeta, saveBookIndex, getReadQueue, addToQueue, removeFromQueue, moveQueueItem, getNotesByBook, getHighlightsByBook, getCollections, getCollectionsByBook } from '../store.js';
+import { getBookMeta, setBookMeta, saveBookIndex, getReadQueue, addToQueue, removeFromQueue, moveQueueItem, getNotesByBook, getAllHighlightsByBook, getCollections, getCollectionsByBook } from '../store.js';
 import { scanBookMeta, buildMetaContext } from '../scanBook.js';
 import { scanLocalBookMeta } from '../utils/localBookScan.js';
 import { printNotesAsPdf, downloadNotesAsMarkdown } from '../utils/exportNotes.js';
 import { BookCollectionPicker, CollectionManager } from '../components/CollectionManager.jsx';
 import { ShareModal } from '../components/ShareModal.jsx';
 import { FullScanButton } from '../components/FullScanButton.jsx';
+import { OfflineCopyButton } from '../components/OfflineCopyButton.jsx';
 import { getLocalBooks, addLocalBook, addLocalBooksNative, removeLocalBook, localBookToBook, usesNativePicker, onElectronMenuOpenPdf, reloadLocalBookFromPath } from '../utils/localBooks.js';
 import { getDriveBooks, driveBookToBook, removeDriveBook } from '../utils/driveBooks.js';
+import { deleteDriveLocalCopy } from '../utils/driveLocalCopy.js';
 
 /* ── Color palette for Drive book covers ─────────────────── */
 const PALETTE = [
@@ -432,24 +434,27 @@ function BookDetailSheet({ book, lang, geminiKey, claudeKey, accessToken, onClos
             </button>
           </div>
 
+          {/* Drive 책이 이미 캐시돼 있어도 실제 파일로 저장(Electron, 소급 적용) */}
+          <OfflineCopyButton book={book} lang={lang} onSaved={onMetaChange} />
+
           {/* 책 전체 텍스트 스캔 (Vision → IndexedDB 영구 저장) */}
           <FullScanButton book={book} lang={lang} geminiKey={geminiKey} />
 
           {/* Notes export — PDF (print) + Markdown */}
           {(() => {
-            const noteCount = getNotesByBook(book.id).length + getHighlightsByBook(book.id).length;
+            const noteCount = getNotesByBook(book.id).length + getAllHighlightsByBook(book.id).length;
             if (noteCount === 0) return null;
             return (
               <div style={{ display: 'flex', gap: 8 }}>
                 <button
-                  onClick={() => printNotesAsPdf(book, getNotesByBook(book.id), getHighlightsByBook(book.id))}
+                  onClick={() => printNotesAsPdf(book, getNotesByBook(book.id), getAllHighlightsByBook(book.id))}
                   title={ko ? '독서 노트 PDF 출력' : 'Print notes as PDF'}
                   style={{ flex: 1, fontSize: 12, color: T.inkLight, background: 'none', border: `1px solid ${T.border}`, borderRadius: 8, padding: '8px', cursor: 'pointer', fontFamily: F.body, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}
                 >
                   📄 {ko ? `노트 PDF (${noteCount})` : `Notes PDF (${noteCount})`}
                 </button>
                 <button
-                  onClick={() => downloadNotesAsMarkdown(book, getNotesByBook(book.id), getHighlightsByBook(book.id))}
+                  onClick={() => downloadNotesAsMarkdown(book, getNotesByBook(book.id), getAllHighlightsByBook(book.id))}
                   title={ko ? 'Markdown 다운로드' : 'Download Markdown'}
                   style={{ flexShrink: 0, fontSize: 12, color: T.inkLight, background: 'none', border: `1px solid ${T.border}`, borderRadius: 8, padding: '8px 12px', cursor: 'pointer', fontFamily: F.body }}
                 >
@@ -493,7 +498,8 @@ function BookDetailSheet({ book, lang, geminiKey, claudeKey, accessToken, onClos
                     ? (ko ? '이 책을 서재에서 제거할까요? (Drive 원본은 삭제되지 않습니다)' : 'Remove this book from your library? (The file stays in Drive.)')
                     : (ko ? '이 책을 기기에서 제거할까요?' : 'Remove this book from your device?');
                   if (!window.confirm(msg)) return;
-                  if (isDrive) removeDriveBook(book.id); else await removeLocalBook(book.id);
+                  if (isDrive) { await deleteDriveLocalCopy(book); removeDriveBook(book.id); }
+                  else await removeLocalBook(book.id);
                   onRemoveBook?.();
                   onClose();
                 }}

@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useTheme } from '../context.jsx';
 import { getBookText } from '../utils/bookTextDb.js';
 import { scanFullBookText } from '../utils/fullBookScan.js';
-import { getIndexStatus, buildBookIndex } from '../utils/ragIndex.js';
+import { getIndexStatus, buildBookIndex, removeBookIndex } from '../utils/ragIndex.js';
 
 /* 책 전체 텍스트 스캔 버튼 — 상세 모달(모바일/데스크톱) 공용.
    모든 페이지의 텍스트를 추출(스캔본은 Vision OCR)해 IndexedDB에 영구 저장.
@@ -69,6 +69,12 @@ export function FullScanButton({ book, lang, geminiKey }) {
     }
   };
 
+  // 책 내용이 바뀌었거나 인식 품질이 낮을 때 수동으로 삭제 후 재생성
+  const rebuildIndex = async () => {
+    await removeBookIndex(book.id);
+    await buildIndex();
+  };
+
   const { status } = st;
   const pct = status === 'running' && st.total ? Math.round((st.page / st.total) * 100) : 0;
 
@@ -93,17 +99,20 @@ export function FullScanButton({ book, lang, geminiKey }) {
       return (
         <div style={{ marginTop: 8, fontSize: 11.5, color: T.secondary, background: T.secondarySoft, border: `1px solid ${T.secondary}44`, borderRadius: 10, padding: '8px 12px', fontFamily: F.body, display: 'flex', alignItems: 'center', gap: 6 }}>
           <span>🧠✓</span>
-          <span>
+          <span style={{ flex: 1 }}>
             {ko ? `검색 인덱스 준비됨 · 청크 ${rag.chunkCount}개` : `Search index ready · ${rag.chunkCount} chunks`}
             <span style={{ opacity: 0.75 }}> {rag.model === 'local-hash-256' ? (ko ? '(오프라인)' : '(offline)') : '(Gemini)'}</span>
           </span>
+          <button onClick={rebuildIndex} title={ko ? '삭제 후 다시 만들기' : 'Delete and rebuild'} style={{ fontSize: 10.5, color: T.secondary, background: 'none', border: `1px solid ${T.secondary}55`, borderRadius: 6, padding: '3px 8px', cursor: 'pointer', fontFamily: F.body, flexShrink: 0 }}>
+            {ko ? '재생성' : 'Rebuild'}
+          </button>
         </div>
       );
     }
     if (rag.status === 'stale') {
       return (
         <div style={{ marginTop: 8 }}>
-          <button onClick={buildIndex} style={{ width: '100%', fontSize: 11.5, fontWeight: 600, color: '#B45309', background: '#FEF3C7', border: '1px solid #FCD34D', borderRadius: 10, padding: '8px 10px', cursor: 'pointer', fontFamily: F.body }}>
+          <button onClick={rebuildIndex} style={{ width: '100%', fontSize: 11.5, fontWeight: 600, color: '#B45309', background: '#FEF3C7', border: '1px solid #FCD34D', borderRadius: 10, padding: '8px 10px', cursor: 'pointer', fontFamily: F.body }}>
             {ko ? '⚠️ Gemini 키가 없어 기존 인덱스를 쓸 수 없어요 — 오프라인으로 재생성' : '⚠️ Existing index needs a Gemini key — tap to rebuild offline'}
           </button>
         </div>

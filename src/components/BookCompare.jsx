@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { useTheme } from '../context.jsx';
 import { Icon } from '../components.jsx';
-import { getBookIndex, getBookMeta, getNotes, getHighlights } from '../store.js';
+import { getBookIndex, getBookMeta, getNotes, getAllHighlightsByBook } from '../store.js';
 import { getDocumentText } from '../pageTextCache.js';
 
 /* ── 책 비교 분석 패널 ────────────────────────────────────────
@@ -31,7 +31,7 @@ export function BookCompare({ lang, callAI, apiKeys, currentBook }) {
     if (!book) return '';
     const meta = getBookMeta(book.id);
     const notes = getNotes().filter(n => n.bookId === book.id);
-    const highlights = getHighlights().filter(h => h.bookId === book.id);
+    const highlights = getAllHighlightsByBook(book.id);
     const doc = getDocumentText(book.id);
     const textSnippet = doc?.text ? doc.text.slice(0, 2000) : '';
 

@@ -11,6 +11,9 @@ contextBridge.exposeInMainWorld('electron', {
   /** Drive에서 다운로드한 PDF를 앱 데이터 폴더에 영구 저장 → { ok, path } */
   saveDrivePdf: (fileName, buffer) => ipcRenderer.invoke('fs:saveDrivePdf', { fileName, buffer }),
 
+  /** drive-books/ 안의 로컬 사본 삭제(서재에서 책 제거 시 고아 파일 방지) → { ok } */
+  deleteDrivePdf: (filePath) => ipcRenderer.invoke('fs:deleteDrivePdf', filePath),
+
   /** 시스템 다크모드 여부 */
   isDark: () => ipcRenderer.invoke('system:isDark'),
 

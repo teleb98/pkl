@@ -8,7 +8,8 @@
 import { getBookIndex, getBookMeta, setBookMeta } from '../store.js';
 import { getLocalBooks } from './localBooks.js';
 import { getDriveBooks } from './driveBooks.js';
-import { findOrCreateFolder, DriveError } from './driveBackup.js';
+import { findOrCreateFolder } from './driveBackup.js';
+import { downloadDriveJson, uploadDriveJson } from './driveJsonSync.js';
 
 const PROGRESS_FILE = 'progress.json';
 
@@ -55,57 +56,6 @@ export function mergeRemoteProgress(remote) {
   return applied;
 }
 
-async function findFile(token, folderId, fileName) {
-  const q = `name='${fileName}' and '${folderId}' in parents and trashed=false`;
-  const res = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id)&pageSize=1`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  if (!res.ok) throw new DriveError(`파일 조회 실패 (${res.status})`, res.status);
-  const data = await res.json();
-  return data.files?.[0]?.id || null;
-}
-
-async function downloadProgressJson(token, folderId) {
-  const fileId = await findFile(token, folderId, PROGRESS_FILE);
-  if (!fileId) return {};
-  const res = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  if (!res.ok) return {};
-  try { return await res.json(); } catch { return {}; }
-}
-
-async function uploadProgressJson(token, folderId, data) {
-  const fileId = await findFile(token, folderId, PROGRESS_FILE);
-  const body = JSON.stringify(data);
-
-  if (fileId) {
-    const res = await fetch(`https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media`, {
-      method: 'PATCH',
-      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body,
-    });
-    if (!res.ok) throw new DriveError(`진행률 업로드 실패 (${res.status})`, res.status);
-    return;
-  }
-
-  const boundary = 'pkl_progress_' + Date.now();
-  const meta = { name: PROGRESS_FILE, mimeType: 'application/json', parents: [folderId] };
-  const multipart = [
-    `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n`,
-    JSON.stringify(meta),
-    `\r\n--${boundary}\r\nContent-Type: application/json\r\n\r\n`,
-    body,
-    `\r\n--${boundary}--`,
-  ].join('');
-  const res = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id', {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${token}`, 'Content-Type': `multipart/related; boundary=${boundary}` },
-    body: multipart,
-  });
-  if (!res.ok) throw new DriveError(`진행률 파일 생성 실패 (${res.status})`, res.status);
-}
-
 /**
  * Drive와 읽은 위치를 양방향 동기화: 원격 → 로컬 반영 → 병합된 스냅샷을 다시 업로드.
  * @returns {{pulled:number, total:number}} 로컬에 반영된 책 수 / 전체 동기화 대상 책 수
@@ -113,9 +63,9 @@ async function uploadProgressJson(token, folderId, data) {
 export async function syncProgressWithDrive(token) {
   if (!token) throw new Error('no-token');
   const folderId = await findOrCreateFolder(token, 'PKL');
-  const remote = await downloadProgressJson(token, folderId);
+  const remote = await downloadDriveJson(token, folderId, PROGRESS_FILE);
   const pulled = mergeRemoteProgress(remote);
   const merged = collectProgressRecords();
-  await uploadProgressJson(token, folderId, merged);
+  await uploadDriveJson(token, folderId, PROGRESS_FILE, merged);
   return { pulled, total: Object.keys(merged).length };
 }

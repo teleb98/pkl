@@ -9,7 +9,7 @@ import {
 } from '../utils/reviewCard.js';
 import {
   getBookReview, saveBookReview,
-  getNotesByBook, getHighlightsByBook,
+  getNotesByBook, getAllHighlightsByBook,
   getBookMeta,
 } from '../store.js';
 
@@ -26,7 +26,7 @@ export function ReviewCardModal({ book, lang = 'ko', apiKeys, onClose }) {
 
   // 통계 계산
   const notes = book?.id ? getNotesByBook(book.id) : [];
-  const highlights = book?.id ? getHighlightsByBook(book.id) : [];
+  const highlights = book?.id ? getAllHighlightsByBook(book.id) : [];
   const meta = book?.id ? getBookMeta(book.id) : null;
   const stats = {
     pages: meta?.pages || 0,

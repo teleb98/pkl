@@ -5,17 +5,19 @@ import { ProgressBar, Button, Icon, ChipRow, SectionLabel, SyncBadge, TypeBadge 
 import { PklMark } from '../Logo.jsx';
 import { scanBookMeta, buildMetaContext } from '../scanBook.js';
 import { scanLocalBookMeta } from '../utils/localBookScan.js';
-import { getPageText, getDocumentText, getPageImage, getTextForRange } from '../pageTextCache.js';
+import { getPageText, getDocumentText, getPageImage, getTextForRange, searchAllText } from '../pageTextCache.js';
+import { hydrateBookText } from '../utils/fullBookScan.js';
 import { ensureBookText } from '../utils/ensureBookText.js';
 import { queryBookIndex, formatRagContext } from '../utils/ragIndex.js';
 import { showError } from '../utils/toast.js';
-import { getBookMeta, setBookMeta, addNote, addHighlight, getNotes, getHighlights, deleteNote, deleteHighlight, getGoals, saveGoals, addSession, getSessions, getWeekStats, getSearchHistory, pushSearchHistory, getBookIndex, saveBookIndex, getAiChat, saveAiChat, getBookmarks, toggleBookmark, getReaderSettings, saveReaderSettings, getMonthStats, getYearStats, getBackupSettings, appendBackupLog, appendProgressSyncLog, getNotesByBook, getHighlightsByBook, getVocabulary, addVocabularyEntry, getPdfAnnotations, addPdfAnnotation } from '../store.js';
+import { getBookMeta, setBookMeta, addNote, addHighlight, getNotes, deleteNote, deleteHighlight, getGoals, saveGoals, addSession, getSessions, getWeekStats, getSearchHistory, pushSearchHistory, getBookIndex, saveBookIndex, getAiChat, saveAiChat, getBookmarks, toggleBookmark, getReaderSettings, saveReaderSettings, getMonthStats, getYearStats, getBackupSettings, appendBackupLog, getNotesByBook, getAllHighlightsByBook, getAllHighlightsMerged, getVocabulary, addVocabularyEntry, getPdfAnnotations, addPdfAnnotation } from '../store.js';
 import { renderStatsCard, downloadStatsCard, STATS_THEMES, fmtMinutes, monthName as monthLabelFn } from '../utils/statsCard.js';
 import { backupBookToDrive } from '../utils/driveBackup.js';
-import { syncProgressWithDrive } from '../utils/progressSync.js';
+import { scheduleProgressAutoSync } from '../utils/autoProgressSync.js';
 import { PdfViewer } from '../components/PdfViewer.jsx';
 import { VisionTextSheet } from '../components/VisionTextSheet.jsx';
 import { FullScanButton } from '../components/FullScanButton.jsx';
+import { OfflineCopyButton } from '../components/OfflineCopyButton.jsx';
 import { KnowledgeScreen } from './KnowledgeScreen.jsx';
 import { RangeSelector } from '../components/RangeSelector.jsx';
 import { QuizModal } from '../components/QuizModal.jsx';
@@ -23,6 +25,7 @@ import { BookCompare } from '../components/BookCompare.jsx';
 import { ShareModal } from '../components/ShareModal.jsx';
 import { getLocalBooks, addLocalBook, addLocalBooksNative, removeLocalBook, localBookToBook, usesNativePicker, onElectronMenuOpenPdf } from '../utils/localBooks.js';
 import { getDriveBooks, driveBookToBook, removeDriveBook } from '../utils/driveBooks.js';
+import { deleteDriveLocalCopy } from '../utils/driveLocalCopy.js';
 
 /* ════════════════════════════════════════════════════════════════
    Desktop shell — tablet (720+) and PC (1100+)
@@ -580,6 +583,9 @@ function BookDetailModal({ book, lang, geminiKey, claudeKey, accessToken, onClos
             </button>
           </div>
 
+          {/* Drive 책이 이미 캐시돼 있어도 실제 파일로 저장(Electron, 소급 적용) */}
+          <OfflineCopyButton book={book} lang={lang} onSaved={onMetaChange} />
+
           {/* 책 전체 텍스트 스캔 (Vision → IndexedDB 영구 저장) */}
           <div style={{ marginBottom: 8 }}>
             <FullScanButton book={book} lang={lang} geminiKey={geminiKey} />
@@ -602,7 +608,8 @@ function BookDetailModal({ book, lang, geminiKey, claudeKey, accessToken, onClos
                     ? (ko ? '이 책을 서재에서 제거할까요? (Drive 원본은 삭제되지 않습니다)' : 'Remove this book from your library? (The file stays in Drive.)')
                     : (ko ? '이 책을 기기에서 제거할까요?' : 'Remove this book from your device?');
                   if (!window.confirm(msg)) return;
-                  if (isDrive) removeDriveBook(book.id); else await removeLocalBook(book.id);
+                  if (isDrive) { await deleteDriveLocalCopy(book); removeDriveBook(book.id); }
+                  else await removeLocalBook(book.id);
                   onRemoveBook?.();
                   onClose();
                 }}
@@ -1233,14 +1240,14 @@ function DesktopReader({ lang, setScreen, openDriveSave, isPC, currentBook, apiK
   useEffect(() => {
     if (!book) return;
     setNotes(getNotes().filter(n => n.bookId === book.id));
-    setHighlights(getHighlights().filter(h => h.bookId === book.id));
+    setHighlights(getAllHighlightsByBook(book.id));
   }, [book?.id, refreshKey]);
 
   useEffect(() => {
     if (!book || sideTab !== "ai") return;
     if (aiMessages.length > 0) return;
     const bookNotes = getNotes().filter(n => n.bookId === book.id);
-    const bookHighlights = getHighlights().filter(h => h.bookId === book.id);
+    const bookHighlights = getAllHighlightsByBook(book.id);
     const count = bookNotes.length + bookHighlights.length;
     const greeting = lang === "ko"
       ? `《${book.title}》에 대해 질문하세요.${count > 0 ? ` 저장된 메모 ${count}개를 참고합니다.` : ""}`
@@ -1332,6 +1339,7 @@ function DesktopReader({ lang, setScreen, openDriveSave, isPC, currentBook, apiK
     setBookMeta(book.id, patch);
     setPdfPage(newPage);
     setSaveFeedback(true);
+    scheduleProgressAutoSync(); // 세션 타이머 없이 페이지만 넘겨도 진행률 동기화되도록(디바운스)
     setTimeout(() => setSaveFeedback(false), 1400);
   };
   adjustPageRef.current = adjustPage;
@@ -1350,6 +1358,7 @@ function DesktopReader({ lang, setScreen, openDriveSave, isPC, currentBook, apiK
     setBookMeta(book.id, patch);
     setPdfPage(p);
     setSaveFeedback(true);
+    scheduleProgressAutoSync();
     setTimeout(() => setSaveFeedback(false), 1400);
     setEditingPage(false); setPageInput(""); setTotalPageInput("");
   };
@@ -1374,7 +1383,7 @@ function DesktopReader({ lang, setScreen, openDriveSave, isPC, currentBook, apiK
         await ensureBookText(book);
       }
       const bookNotes = getNotes().filter(n => n.bookId === book.id);
-      const bookHighlights = getHighlights().filter(h => h.bookId === book.id);
+      const bookHighlights = getAllHighlightsByBook(book.id);
       // Use image when current page has no extractable text (scanned PDF)
       const pageImg = currentPageData?.imageBase64 && !currentPageData?.text ? currentPageData.imageBase64 : null;
       // RAG: 질문과 가장 관련 있는 구절을 벡터 인덱스에서 검색해 프롬프트에 추가 (인덱스 없으면 조용히 스킵)
@@ -1977,23 +1986,43 @@ function DesktopSearch({ lang, isPC, onOpenBook }) {
   const [allNotes, setAllNotes] = useState([]);
   const [allHighlights, setAllHighlights] = useState([]);
   const [allBooks, setAllBooks] = useState([]);
+  const [hydrated, setHydrated] = useState(0); // 전문 복원 후 본문검색 재계산 트리거
 
   useEffect(() => {
     setHistory(getSearchHistory());
     setAllNotes(getNotes());
-    setAllHighlights(getHighlights());
+    setAllHighlights(getAllHighlightsMerged());
     // Drive 폴더 동기화 인덱스 + 로컬/Drive 수동 추가 책 모두 포함 (검색 누락 방지)
     const index = getBookIndex();
     const manual = [...getLocalBooks(), ...getDriveBooks()].filter(b => !index.some(x => x.id === b.id));
     setAllBooks([...manual, ...index].map(b => ({ ...b, ...getBookMeta(b.id) })));
+    // 전체 스캔으로 저장된 전문을 메모리로 복원 → 앱 재시작 후에도 본문 검색 가능
+    (async () => {
+      const ids = [...new Set([...index.map(b => b.id), ...getLocalBooks().map(b => b.id)])];
+      let n = 0;
+      for (const id of ids) n += await hydrateBookText(id);
+      if (n > 0) setHydrated(n);
+    })();
   }, []);
 
   const filterOpts = [
     { key: "all", label: lang === "ko" ? "전체" : "All" },
     { key: "book", label: lang === "ko" ? "책" : "Books" },
+    { key: "text", label: lang === "ko" ? "본문" : "In-text" },
     { key: "highlight", label: lang === "ko" ? "하이라이트" : "Highlights" },
     { key: "note", label: lang === "ko" ? "메모" : "Notes" },
   ];
+
+  // 전문(본문) 검색 — 추출된 책 텍스트에서 query 매칭 (뷰어/AI로 텍스트가 채워진 책)
+  const textHits = useMemo(() => {
+    if (!query.trim() || (filter !== "all" && filter !== "text")) return [];
+    const titleOf = (id) => {
+      const b = allBooks.find(x => x.id === id) || getLocalBooks().find(x => x.id === id);
+      return b?.aiTitle || b?.title || id;
+    };
+    return searchAllText(query, 5).map(h => ({ ...h, bookTitle: titleOf(h.bookId) }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query, filter, allBooks, hydrated]);
 
   const allItems = useMemo(() => [
     ...allHighlights.map(h => ({ ...h, type: "highlight" })),
@@ -2031,7 +2060,7 @@ function DesktopSearch({ lang, isPC, onOpenBook }) {
   };
 
   const isEmpty = allItems.length === 0 && allBooks.length === 0;
-  const hasResults = query.trim() ? (filteredBooks.length + filtered.length > 0) : filtered.length > 0;
+  const hasResults = query.trim() ? (filteredBooks.length + filtered.length + textHits.length > 0) : filtered.length > 0;
 
   return (
     <>
@@ -2093,15 +2122,38 @@ function DesktopSearch({ lang, isPC, onOpenBook }) {
                 </div>
               </>
             )}
-            {filter !== "book" && (
+            {textHits.length > 0 && (
               <>
-                <div style={{ fontSize: 10, fontWeight: 700, color: T.inkLight, letterSpacing: 1.3, textTransform: "uppercase", fontFamily: F.body, marginBottom: 12 }}>{filtered.length > 0 ? `${lang === "ko" ? "메모·하이라이트" : "Notes & Highlights"} · ${filtered.length}` : filteredBooks.length === 0 ? (lang === "ko" ? "결과 없음" : "No results") : ""}</div>
+                <div style={{ fontSize: 10, fontWeight: 700, color: T.inkLight, letterSpacing: 1.3, textTransform: "uppercase", fontFamily: F.body, marginBottom: 12 }}>{lang === "ko" ? `본문 · ${textHits.length}` : `In-text · ${textHits.length}`}</div>
+                <div style={{ display: "grid", gridTemplateColumns: isPC ? "repeat(2, 1fr)" : "1fr", gap: 12, marginBottom: 20 }}>
+                  {textHits.map((h, i) => (
+                    <div key={`${h.bookId}-${h.page}-${i}`} style={{ background: T.surface, borderRadius: 12, padding: 14, border: `1px solid ${T.border}` }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                        <div style={{ fontSize: 12, fontWeight: 600, color: T.inkMid, fontFamily: F.body, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          📖 {h.bookTitle} <span style={{ color: T.inkLight, fontFamily: F.mono }}>· p.{h.page}</span>
+                        </div>
+                        {onOpenBook && <button onClick={() => onOpenBook({ id: h.bookId, title: h.bookTitle })} style={{ padding: "5px 11px", borderRadius: 8, border: "none", background: T.accent, color: "#FFF", fontSize: 11, fontFamily: F.body, fontWeight: 600, cursor: "pointer", flexShrink: 0 }}>{lang === "ko" ? "열기" : "Open"}</button>}
+                      </div>
+                      <div style={{ fontSize: 12.5, color: T.inkMid, fontFamily: F.body, lineHeight: 1.55 }}>{hl(h.snippet)}</div>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+            {filter !== "book" && filter !== "text" && (
+              <>
+                <div style={{ fontSize: 10, fontWeight: 700, color: T.inkLight, letterSpacing: 1.3, textTransform: "uppercase", fontFamily: F.body, marginBottom: 12 }}>{filtered.length > 0 ? `${lang === "ko" ? "메모·하이라이트" : "Notes & Highlights"} · ${filtered.length}` : ""}</div>
                 <div style={{ display: "grid", gridTemplateColumns: isPC ? "repeat(2, 1fr)" : "1fr", gap: 12 }}>
                   {filtered.map((item, i) => <DesktopSearchCard key={item.id || i} item={item} T={T} F={F} lang={lang} hl={hl} />)}
                 </div>
               </>
             )}
-            {!hasResults && <div style={{ fontSize: 14, color: T.inkLight, fontFamily: F.body, textAlign: "center", padding: "40px 0" }}>{lang === "ko" ? "검색 결과가 없어요" : "No results found"}</div>}
+            {!hasResults && (
+              <div style={{ fontSize: 14, color: T.inkLight, fontFamily: F.body, textAlign: "center", padding: "40px 0" }}>
+                {lang === "ko" ? "검색 결과가 없어요" : "No results found"}
+                {filter === "text" && <div style={{ fontSize: 11.5, marginTop: 6 }}>{lang === "ko" ? "뷰어에서 연 책의 본문만 검색됩니다." : "Only books opened in the viewer are searchable."}</div>}
+              </div>
+            )}
           </>
         )}
       </div>
@@ -2222,17 +2274,13 @@ function DesktopGoals({ lang, isPC, currentBook }) {
       const bs = getBackupSettings();
       if (bs.autoBackup && bs.writeToken) {
         const notes = getNotesByBook(currentBook.id);
-        const highlights = getHighlightsByBook(currentBook.id);
+        const highlights = getAllHighlightsByBook(currentBook.id);
         backupBookToDrive(bs.writeToken, currentBook, notes, highlights)
           .then(() => appendBackupLog({ status: 'ok', succeeded: 1, failed: 0, auto: true }))
           .catch(e => appendBackupLog({ status: 'error', error: e.message, auto: true }));
       }
-      // 읽은 위치 자동 동기화 — 메모 백업과 별개 토글, 같은 writeToken 재사용
-      if (bs.autoProgressSync && bs.writeToken) {
-        syncProgressWithDrive(bs.writeToken)
-          .then(({ pulled, total }) => appendProgressSyncLog({ status: 'ok', pulled, total, auto: true }))
-          .catch(e => appendProgressSyncLog({ status: 'error', error: e.message, auto: true }));
-      }
+      // 읽은 위치·컬렉션·단어장 자동 동기화 — 메모 백업과 별개 토글, 같은 writeToken 재사용
+      scheduleProgressAutoSync(0);
     }
   };
 
@@ -2646,7 +2694,7 @@ function DesktopAI({ lang, isPC, apiKeys, currentBook }) {
   useEffect(() => {
     if (!currentBook) { setMessages([]); return; }
     const bookNotes = getNotes().filter(n => n.bookId === currentBook.id);
-    const bookHighlights = getHighlights().filter(h => h.bookId === currentBook.id);
+    const bookHighlights = getAllHighlightsByBook(currentBook.id);
     setNotes(bookNotes);
     setHighlights(bookHighlights);
     const greeting = lang === "ko"

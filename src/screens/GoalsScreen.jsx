@@ -8,10 +8,10 @@ import {
   computeReadingSpeed, estimateCompletion,
   getNotificationSettings, saveNotificationSettings,
   getMonthStats, getYearStats,
-  getBackupSettings, appendBackupLog, appendProgressSyncLog, getNotesByBook, getHighlightsByBook,
+  getBackupSettings, appendBackupLog, getNotesByBook, getAllHighlightsByBook,
 } from '../store.js';
 import { backupBookToDrive } from '../utils/driveBackup.js';
-import { syncProgressWithDrive } from '../utils/progressSync.js';
+import { scheduleProgressAutoSync } from '../utils/autoProgressSync.js';
 import { renderStatsCard, downloadStatsCard, STATS_THEMES, fmtMinutes, monthName as monthLabel } from '../utils/statsCard.js';
 import { getWeeklyCoachData, generateCoachPrompt } from '../utils/readingCoach.js';
 import { callAI } from '../aiClient.js';
@@ -171,17 +171,13 @@ export function GoalsScreen({ lang, currentBook, onOpenBook, apiKeys }) {
       const bs = getBackupSettings();
       if (bs.autoBackup && bs.writeToken) {
         const notes = getNotesByBook(currentBook.id);
-        const highlights = getHighlightsByBook(currentBook.id);
+        const highlights = getAllHighlightsByBook(currentBook.id);
         backupBookToDrive(bs.writeToken, currentBook, notes, highlights)
           .then(() => appendBackupLog({ status: 'ok', succeeded: 1, failed: 0, auto: true }))
           .catch(e => appendBackupLog({ status: 'error', error: e.message, auto: true }));
       }
-      // 읽은 위치 자동 동기화 — 메모 백업과 별개 토글, 같은 writeToken 재사용
-      if (bs.autoProgressSync && bs.writeToken) {
-        syncProgressWithDrive(bs.writeToken)
-          .then(({ pulled, total }) => appendProgressSyncLog({ status: 'ok', pulled, total, auto: true }))
-          .catch(e => appendProgressSyncLog({ status: 'error', error: e.message, auto: true }));
-      }
+      // 읽은 위치·컬렉션·단어장 자동 동기화 — 메모 백업과 별개 토글, 같은 writeToken 재사용
+      scheduleProgressAutoSync(0);
     }
   };
 
@@ -739,6 +735,11 @@ export function GoalsScreen({ lang, currentBook, onOpenBook, apiKeys }) {
                 <input type="time" value={notifSettings.time} onChange={e => updateNotifSettings({ time: e.target.value })} style={{ border: `1px solid ${T.border}`, borderRadius: 8, padding: '6px 10px', fontSize: 13, fontFamily: F.mono, color: T.ink, background: T.surfaceAlt, outline: 'none' }} />
               )}
             </div>
+          )}
+          {notifPermission === 'granted' && notifSettings.enabled && (
+            <p style={{ margin: '10px 0 0', fontSize: 10.5, color: T.inkFaint, fontFamily: F.body, lineHeight: 1.5 }}>
+              {lang === 'ko' ? '앱이 열려 있을 때만 알림이 울립니다.' : 'Reminders only fire while the app is open.'}
+            </p>
           )}
         </div>
       </div>

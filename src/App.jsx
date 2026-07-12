@@ -18,9 +18,11 @@ import { OnboardingFlow } from './screens/OnboardingFlow.jsx';
 import { AddBookFlow } from './screens/AddBookFlow.jsx';
 import { DesktopShell } from './screens/DesktopLayout.jsx';
 import { PklMark } from './Logo.jsx';
-import { getBackupSettings, saveBackupSettings, appendBackupLog, getLastBackupTime, appendProgressSyncLog, getLastProgressSyncTime, getNotesByBook, getHighlightsByBook, getBookIndex } from './store.js';
+import { getBackupSettings, saveBackupSettings, appendBackupLog, getLastBackupTime, appendProgressSyncLog, getLastProgressSyncTime, getNotesByBook, getAllHighlightsByBook, getBookIndex } from './store.js';
 import { backupAllToDrive, DriveError } from './utils/driveBackup.js';
 import { syncProgressWithDrive } from './utils/progressSync.js';
+import { syncLibraryDataWithDrive } from './utils/librarySync.js';
+import { checkAndFireReminder } from './utils/readingReminder.js';
 import { getCacheInfo, clearAllCache, deleteCachedPdf } from './utils/pdfCache.js';
 
 /* ── Settings panel ───────────────────────────────────────────── */
@@ -81,6 +83,9 @@ function SettingsPanel({ settings, setSettings, onClose, userConfig, onUpdateCon
     setProgressSyncMsg('');
     try {
       const { pulled, total } = await syncProgressWithDrive(token);
+      // 컬렉션·단어장도 같은 버튼/토큰으로 함께 동기화. 실패해도 진행률 동기화
+      // 자체는 이미 성공했으니 조용히 무시(별도 UI 노이즈를 만들지 않음).
+      await syncLibraryDataWithDrive(token).catch(() => {});
       appendProgressSyncLog({ status: 'ok', pulled, total });
       setProgressSyncState('ok');
       setProgressSyncMsg(lang === 'ko' ? `✓ 동기화 완료 (${total}권)` : `✓ Synced (${total} books)`);
@@ -228,7 +233,7 @@ function SettingsPanel({ settings, setSettings, onClose, userConfig, onUpdateCon
     try {
       const books = getBookIndex();
       const { succeeded, failed } = await backupAllToDrive(
-        token, books, getNotesByBook, getHighlightsByBook
+        token, books, getNotesByBook, getAllHighlightsByBook
       );
       appendBackupLog({ status: 'ok', succeeded: succeeded.length, failed: failed.length });
       setBackupState('ok');
@@ -547,17 +552,17 @@ function SettingsPanel({ settings, setSettings, onClose, userConfig, onUpdateCon
           </p>
         </div>
 
-        {/* 읽은 위치 동기화 — 메모 백업과 별개, 같은 writeToken 재사용 */}
+        {/* 읽은 위치·컬렉션·단어장 동기화 — 메모 백업과 별개, 같은 writeToken 재사용 */}
         <div style={{ borderTop: `1px solid ${T.border}`, paddingTop: 18 }}>
           <div style={{ fontSize: 10, fontWeight: 700, color: T.inkLight, letterSpacing: 1.2, textTransform: 'uppercase', fontFamily: F.body, marginBottom: 12 }}>
-            {lang === 'ko' ? '읽은 위치 동기화' : 'Reading Progress Sync'}
+            {lang === 'ko' ? '기기 간 동기화' : 'Cross-device Sync'}
           </div>
 
           <div style={{ background: T.surfaceAlt, borderRadius: 12, padding: '12px 14px', border: `1px solid ${T.border}`, marginBottom: 10 }}>
             <div style={{ fontSize: 12, color: T.inkMid, fontFamily: F.body, lineHeight: 1.55, marginBottom: 10 }}>
               {lang === 'ko'
-                ? '메모·하이라이트 내용이 아니라 "어디까지 읽었는지"(진행률·마지막 페이지)만 작은 파일로 동기화해 다른 기기에서 이어 읽을 수 있게 합니다.'
-                : "Syncs only reading position (progress % and last page) — not notes or highlights — so you can continue on another device."}
+                ? '메모·하이라이트 내용이 아니라 "어디까지 읽었는지"(진행률·마지막 페이지)와 컬렉션·단어장만 작은 파일로 동기화해 다른 기기에서 이어 쓸 수 있게 합니다.'
+                : "Syncs reading position (progress % and last page) plus collections and vocabulary — not notes or highlights — so you can continue on another device."}
               {lastProgressSyncTime && (
                 <span style={{ display: 'block', marginTop: 6, color: T.inkLight }}>
                   {lang === 'ko' ? '마지막 동기화: ' : 'Last synced: '}
@@ -674,8 +679,8 @@ function SettingsPanel({ settings, setSettings, onClose, userConfig, onUpdateCon
             </div>
             <div style={{ fontSize: 10.5, color: T.inkLight, fontFamily: F.body, marginTop: 6, lineHeight: 1.5 }}>
               {lang === 'ko'
-                ? '로컬: Tesseract(기기 내장)·Ollama(데스크톱)·Gemma 4(브라우저) — 책 내용이 기기를 벗어나지 않습니다.'
-                : 'Local: Tesseract (built-in) · Ollama (desktop) · Gemma 4 (browser) — your book never leaves the device.'}
+                ? '로컬: Apple Vision(Mac 앱)·서버 Vision(자가호스팅 Mac)·Ollama(데스크톱)·Tesseract(기기 내장)·Gemma 4(브라우저) 순으로 시도 — 책 내용이 기기를 벗어나지 않습니다.'
+                : 'Local: tries Apple Vision (Mac app) · Server Vision (self-hosted Mac) · Ollama (desktop) · Tesseract (built-in) · Gemma 4 (browser) in order — your book never leaves the device.'}
             </div>
             {/* 브라우저 Gemma 4 OCR — WebGPU 모델 URL (선택, 고급) */}
             {ocrMode !== 'cloud' && (
@@ -795,6 +800,13 @@ export default function App() {
     const fn = () => setViewW(window.innerWidth);
     window.addEventListener('resize', fn);
     return () => window.removeEventListener('resize', fn);
+  }, []);
+
+  // 독서 알림 — 화면/스크린 전환과 무관하게 앱이 열려있는 동안 항상 체크
+  useEffect(() => {
+    checkAndFireReminder();
+    const id = setInterval(checkAndFireReminder, 60 * 1000);
+    return () => clearInterval(id);
   }, []);
 
   const themeKey = settings.dark ? `${settings.theme}Dark` : settings.theme;

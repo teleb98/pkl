@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { i18n } from '../data.js';
 import { useTheme } from '../context.jsx';
 import { Icon, ScreenHeader } from '../components.jsx';
-import { getBookMeta, getNotes, getHighlights, getAiChat, saveAiChat } from '../store.js';
+import { getBookMeta, getNotes, getAllHighlightsByBook, getAiChat, saveAiChat } from '../store.js';
 import { BookCompare } from '../components/BookCompare.jsx';
 import { buildMetaContext } from '../scanBook.js';
 import { getPageText, getDocumentText, getPageImage } from '../pageTextCache.js';
@@ -128,7 +128,7 @@ export function AIChatScreen({ lang, apiKeys, currentBook, onOpenBook, setScreen
   useEffect(() => {
     if (!currentBook) { setMessages([]); return; }
     const bookNotes = getNotes().filter(n => n.bookId === currentBook.id);
-    const bookHighlights = getHighlights().filter(h => h.bookId === currentBook.id);
+    const bookHighlights = getAllHighlightsByBook(currentBook.id);
     setNotes(bookNotes);
     setHighlights(bookHighlights);
     const greeting = lang === 'ko'
