@@ -5,6 +5,7 @@ import { ThemeContext } from './context.jsx';
 import { THEMES, TYPE_PAIRS } from './data.js';
 import { TabBar, Icon } from './components.jsx';
 import { Toaster } from './components/Toast.jsx';
+import { FamilySwitcher } from './components/FamilySwitcher.jsx';
 import { GoogleLogo } from './screens/OnboardingFlow.jsx';
 import { LibraryScreen } from './screens/LibraryScreen.jsx';
 import { ReaderScreen } from './screens/ReaderScreen.jsx';
@@ -306,6 +307,11 @@ function SettingsPanel({ settings, setSettings, onClose, userConfig, onUpdateCon
           <div style={{ display: 'flex', gap: 6, background: T.surfaceAlt, padding: 3, borderRadius: 10, border: `1px solid ${T.border}` }}>
             {[{ v: 'ko', l: '한국어' }, { v: 'en', l: 'English' }].map(lg => <button key={lg.v} onClick={() => setSettings(s => ({ ...s, lang: lg.v }))} style={{ flex: 1, padding: '8px 0', borderRadius: 7, border: 'none', background: settings.lang === lg.v ? T.surface : 'transparent', color: settings.lang === lg.v ? T.ink : T.inkLight, fontSize: 13, fontWeight: settings.lang === lg.v ? 600 : 400, fontFamily: F.body, cursor: 'pointer', boxShadow: settings.lang === lg.v ? `0 1px 4px ${T.ink}15` : 'none' }}>{lg.l}</button>)}
           </div>
+        </div>
+
+        {/* rarebook 패밀리 서비스 */}
+        <div style={{ borderTop: `1px solid ${T.border}`, paddingTop: 18, marginBottom: 20 }}>
+          <FamilySwitcher T={T} F={F} current="pkl" />
         </div>
 
         {/* Google Account */}
