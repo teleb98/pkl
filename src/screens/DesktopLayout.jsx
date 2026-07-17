@@ -10,7 +10,9 @@ import { hydrateBookText } from '../utils/fullBookScan.js';
 import { ensureBookText } from '../utils/ensureBookText.js';
 import { queryBookIndex, formatRagContext } from '../utils/ragIndex.js';
 import { showError } from '../utils/toast.js';
-import { getBookMeta, setBookMeta, addNote, addHighlight, getNotes, deleteNote, deleteHighlight, getGoals, saveGoals, addSession, getSessions, getWeekStats, getSearchHistory, pushSearchHistory, getBookIndex, saveBookIndex, getAiChat, saveAiChat, getBookmarks, toggleBookmark, getReaderSettings, saveReaderSettings, getMonthStats, getYearStats, getBackupSettings, appendBackupLog, getNotesByBook, getAllHighlightsByBook, getAllHighlightsMerged, getVocabulary, addVocabularyEntry, getPdfAnnotations, addPdfAnnotation } from '../store.js';
+import { getBookMeta, setBookMeta, addNote, addHighlight, getNotes, deleteNote, deleteHighlight, getGoals, saveGoals, addSession, getSessions, getWeekStats, getSearchHistory, pushSearchHistory, getBookIndex, saveBookIndex, getAiChat, saveAiChat, getBookmarks, toggleBookmark, getReaderSettings, saveReaderSettings, getMonthStats, getYearStats, getBackupSettings, appendBackupLog, getNotesByBook, getAllHighlightsByBook, getAllHighlightsMerged, getVocabulary, addVocabularyEntry, getPdfAnnotations, addPdfAnnotation, computeReadingSpeed, estimateCompletion, getReadingStrategy, saveReadingStrategy } from '../store.js';
+import { generateReadingStrategy } from '../utils/readingStrategy.js';
+import { semanticSearchAll, formatLibraryContext, listIndexedBooks } from '../utils/ragSearch.js';
 import { renderStatsCard, downloadStatsCard, STATS_THEMES, fmtMinutes, monthName as monthLabelFn } from '../utils/statsCard.js';
 import { backupBookToDrive } from '../utils/driveBackup.js';
 import { scheduleProgressAutoSync } from '../utils/autoProgressSync.js';
@@ -171,7 +173,7 @@ export function DesktopShell({ layout, lang, screen, setScreen, openDriveSave, u
         {screen === "reader"    && <DesktopReader lang={lang} setScreen={setScreen} openDriveSave={openDriveSave} isPC={isPC} currentBook={currentBook} apiKeys={userConfig?.apiKeys} openAiPanel={openAiPanel} onAiPanelConsumed={() => setOpenAiPanel(false)} />}
         {screen === "search"    && <DesktopSearch lang={lang} isPC={isPC} onOpenBook={onOpenBook} />}
         {screen === "knowledge" && <DesktopKnowledge lang={lang} isPC={isPC} apiKeys={userConfig?.apiKeys} currentBook={currentBook} />}
-        {screen === "goals"     && <DesktopGoals lang={lang} isPC={isPC} currentBook={currentBook} onOpenBook={onOpenBook} />}
+        {screen === "goals"     && <DesktopGoals lang={lang} isPC={isPC} currentBook={currentBook} onOpenBook={onOpenBook} apiKeys={userConfig?.apiKeys} />}
         {screen === "ai"        && <DesktopAI lang={lang} isPC={isPC} apiKeys={userConfig?.apiKeys} currentBook={currentBook} onShowSettings={onShowSettings} />}
       </div>
     </div>
@@ -2212,7 +2214,7 @@ function desktopComputeMonthReadDays() {
 }
 
 /* ── DESKTOP: GOALS ───────────────────────────────────── */
-function DesktopGoals({ lang, isPC, currentBook }) {
+function DesktopGoals({ lang, isPC, currentBook, apiKeys }) {
   const { T, F } = useTheme();
   const t = i18n[lang];
   const [goals, setGoals] = useState(() => getGoals());
@@ -2225,6 +2227,41 @@ function DesktopGoals({ lang, isPC, currentBook }) {
   const [pageInput, setPageInput] = useState("");
   const [sessionDone, setSessionDone] = useState(null);
   const timerRef = useRef(null);
+
+  // 독서 전략(책별 RAG 기반 맞춤 목표) state
+  const [strategy, setStrategy] = useState(() => currentBook?.id ? getReadingStrategy(currentBook.id) : null);
+  const [strategyLoading, setStrategyLoading] = useState(false);
+  const [strategyError, setStrategyError] = useState("");
+  useEffect(() => {
+    setStrategy(currentBook?.id ? getReadingStrategy(currentBook.id) : null);
+    setStrategyError("");
+  }, [currentBook?.id]);
+
+  const runGenerateStrategy = async () => {
+    if (!currentBook?.id || strategyLoading) return;
+    if (!apiKeys?.claude && !apiKeys?.gemini) {
+      setStrategyError(lang === "ko" ? "AI 키를 설정해주세요" : "Set an API key first");
+      return;
+    }
+    setStrategyLoading(true);
+    setStrategyError("");
+    try {
+      const est = estimateCompletion(currentBook.id);
+      const result = await generateReadingStrategy(currentBook, {
+        lang, apiKeys, speed: computeReadingSpeed(), remainingPages: est?.remaining ?? null,
+      });
+      saveReadingStrategy(currentBook.id, result);
+      setStrategy({ ...result, generatedAt: Date.now() });
+    } catch (e) {
+      setStrategyError(
+        e.message === "no-scanned-text"
+          ? (lang === "ko" ? "먼저 뷰어에서 책 전체를 스캔해주세요(Vision)." : "Full-scan the book first (Vision) in the viewer.")
+          : (lang === "ko" ? `전략 생성 실패: ${e.message}` : `Failed to generate: ${e.message}`)
+      );
+    } finally {
+      setStrategyLoading(false);
+    }
+  };
 
   // 4-4: 통계 공유 탭
   const nowDate = new Date();
@@ -2363,8 +2400,9 @@ function DesktopGoals({ lang, isPC, currentBook }) {
       <div style={{ padding: "12px 28px 0" }}>
         <div style={{ display: "flex", background: T.surfaceAlt, borderRadius: 12, padding: 3, border: `1px solid ${T.border}`, maxWidth: 360 }}>
           {[
-            { key: "session", label: lang === "ko" ? "📖 세션" : "📖 Session" },
-            { key: "stats",   label: lang === "ko" ? "📊 통계 공유" : "📊 Stats Share" },
+            { key: "session",  label: lang === "ko" ? "📖 세션" : "📖 Session" },
+            { key: "strategy", label: lang === "ko" ? "📋 독서 전략" : "📋 Strategy" },
+            { key: "stats",    label: lang === "ko" ? "📊 통계 공유" : "📊 Stats Share" },
           ].map(tab => (
             <button
               key={tab.key}
@@ -2572,6 +2610,98 @@ function DesktopGoals({ lang, isPC, currentBook }) {
         </div>
       </div>
       )}
+
+      {/* ── 독서 전략 탭 — 전체 스캔(RAG) + 실제 독서 속도로 맞춤 목표 생성 ── */}
+      {goalsTab === "strategy" && (
+        <div style={{ flex: 1, overflowY: "auto", padding: "20px 28px 32px" }}>
+          {!currentBook ? (
+            <div style={{ maxWidth: 480, padding: "40px 4px", display: "flex", flexDirection: "column", alignItems: "center", gap: 14, textAlign: "center" }}>
+              <div style={{ width: 64, height: 64, borderRadius: 18, background: T.accentSoft, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <Icon name="goals" size={28} color={T.accent} />
+              </div>
+              <div style={{ fontSize: 13, color: T.inkLight, fontFamily: F.body, lineHeight: 1.65, maxWidth: 320 }}>
+                {lang === "ko" ? "서재에서 책을 열면 그 책의 독서 전략을 세울 수 있어요." : "Open a book from your library to build a reading strategy for it."}
+              </div>
+            </div>
+          ) : (
+            <div style={{ maxWidth: 560 }}>
+              <div style={{ background: T.accentSoft, borderRadius: 14, padding: "12px 14px", border: `1px solid ${T.accent}22`, marginBottom: 14, display: "flex", alignItems: "center", gap: 10 }}>
+                <Icon name="library" size={16} color={T.accent} />
+                <div style={{ fontSize: 13, color: T.ink, fontFamily: "serif", fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{currentBook.title}</div>
+              </div>
+
+              <button
+                onClick={runGenerateStrategy}
+                disabled={strategyLoading}
+                style={{ width: "100%", padding: "13px 0", borderRadius: 12, border: "none", background: strategyLoading ? T.border : T.accent, color: "#FFF", fontSize: 13.5, fontWeight: 700, fontFamily: F.body, cursor: strategyLoading ? "default" : "pointer", marginBottom: 10 }}
+              >
+                {strategyLoading
+                  ? (lang === "ko" ? "전략 생성 중…" : "Generating…")
+                  : strategy
+                    ? (lang === "ko" ? "🔄 전략 다시 생성" : "🔄 Regenerate strategy")
+                    : (lang === "ko" ? "📋 AI 독서 전략 생성" : "📋 Generate AI reading strategy")}
+              </button>
+
+              {strategyError && (
+                <div style={{ fontSize: 12, color: "#C0392B", fontFamily: F.body, marginBottom: 14, lineHeight: 1.55 }}>
+                  ⚠️ {strategyError}
+                </div>
+              )}
+
+              {strategy && (
+                <div style={{ background: T.surface, borderRadius: 16, padding: 20, border: `1px solid ${T.border}` }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
+                    <span style={{ fontSize: 11, fontWeight: 700, color: T.accent, background: T.accentSoft, padding: "4px 10px", borderRadius: 999, fontFamily: F.body }}>
+                      {lang === "ko" ? "난이도" : "Difficulty"} · {strategy.difficulty || "—"}
+                    </span>
+                  </div>
+                  {strategy.difficultyReason && (
+                    <div style={{ fontSize: 12.5, color: T.inkMid, fontFamily: F.body, lineHeight: 1.6, marginBottom: 16 }}>{strategy.difficultyReason}</div>
+                  )}
+
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 10, marginBottom: 18 }}>
+                    <div style={{ background: T.surfaceAlt, borderRadius: 12, padding: "12px 14px", border: `1px solid ${T.border}` }}>
+                      <div style={{ fontSize: 10, fontWeight: 700, color: T.inkLight, letterSpacing: 1, textTransform: "uppercase", fontFamily: F.body, marginBottom: 4 }}>{lang === "ko" ? "일일 목표" : "Daily target"}</div>
+                      <div style={{ fontSize: 22, fontWeight: 700, color: T.ink, fontFamily: F.mono }}>{strategy.dailyPageTarget}<span style={{ fontSize: 12, color: T.inkLight }}>p</span></div>
+                    </div>
+                    <div style={{ background: T.surfaceAlt, borderRadius: 12, padding: "12px 14px", border: `1px solid ${T.border}` }}>
+                      <div style={{ fontSize: 10, fontWeight: 700, color: T.inkLight, letterSpacing: 1, textTransform: "uppercase", fontFamily: F.body, marginBottom: 4 }}>{lang === "ko" ? "예상 완독" : "Est. finish"}</div>
+                      <div style={{ fontSize: 22, fontWeight: 700, color: T.ink, fontFamily: F.mono }}>{strategy.estimatedDays}<span style={{ fontSize: 12, color: T.inkLight }}>{lang === "ko" ? "일" : "d"}</span></div>
+                    </div>
+                  </div>
+
+                  {strategy.focusAreas?.length > 0 && (
+                    <div style={{ marginBottom: 16 }}>
+                      <div style={{ fontSize: 10, fontWeight: 700, color: T.inkLight, letterSpacing: 1.2, textTransform: "uppercase", fontFamily: F.body, marginBottom: 8 }}>
+                        {lang === "ko" ? "집중해서 볼 부분" : "Focus areas"}
+                      </div>
+                      {strategy.focusAreas.map((f, i) => (
+                        <div key={i} style={{ display: "flex", gap: 8, marginBottom: 6, fontSize: 12.5, color: T.inkMid, fontFamily: F.body, lineHeight: 1.55 }}>
+                          <span style={{ color: T.accent, flexShrink: 0 }}>▸</span><span>{f}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {strategy.milestones?.length > 0 && (
+                    <div>
+                      <div style={{ fontSize: 10, fontWeight: 700, color: T.inkLight, letterSpacing: 1.2, textTransform: "uppercase", fontFamily: F.body, marginBottom: 8 }}>
+                        {lang === "ko" ? "마일스톤" : "Milestones"}
+                      </div>
+                      {strategy.milestones.map((m, i) => (
+                        <div key={i} style={{ display: "flex", gap: 10, alignItems: "baseline", marginBottom: 8, paddingLeft: 2 }}>
+                          <span style={{ fontSize: 11, fontWeight: 700, color: T.accent, fontFamily: F.body, minWidth: 44, flexShrink: 0 }}>{m.label}</span>
+                          <span style={{ fontSize: 12.5, color: T.inkMid, fontFamily: F.body, lineHeight: 1.5 }}>{m.goal}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
     </>
   );
 }
@@ -2694,6 +2824,7 @@ function DesktopAI({ lang, isPC, apiKeys, currentBook, onShowSettings }) {
   const [loading, setLoading] = useState(false);
   const [notes, setNotes] = useState([]);
   const [highlights, setHighlights] = useState([]);
+  const [libraryWide, setLibraryWide] = useState(false); // 서재 전체(RAG 통합 DB) 참고 여부
   const scrollRef = useRef(null);
 
   const hasKey = !!(apiKeys?.claude || apiKeys?.gemini);
@@ -2735,7 +2866,25 @@ function DesktopAI({ lang, isPC, apiKeys, currentBook, onShowSettings }) {
       if (!getDocumentText(currentBook.id)) {
         await ensureBookText(currentBook);
       }
-      const systemPrompt = buildDesktopSystemPrompt(mode, currentBook, notes, highlights, lang);
+      // RAG: 질문과 가장 관련 있는 구절을 벡터 인덱스에서 검색해 프롬프트에 추가 (인덱스 없으면 조용히 스킵)
+      let ragCtx = "";
+      try {
+        const hits = await queryBookIndex(currentBook.id, text, { geminiKey: apiKeys?.gemini, topK: 5 });
+        ragCtx = formatRagContext(hits, lang);
+      } catch { /* RAG 조회 실패는 무시 — 기존 문서 컨텍스트로 계속 진행 */ }
+      // 서재 전체 참고(켜짐): 지금까지 스캔·인덱싱한 다른 책들의 RAG DB도 가로질러 검색.
+      // 읽은 책이 쌓일수록 이전 책의 관련 구절이 답변에 함께 활용된다.
+      if (libraryWide) {
+        try {
+          const otherHits = await semanticSearchAll(text, {
+            geminiKey: apiKeys?.gemini, total: 5,
+            bookIds: getBookIndex().map(b => b.id).filter(id => id !== currentBook.id),
+          });
+          const titleOf = (id) => getBookIndex().find(b => b.id === id)?.title || id;
+          ragCtx += formatLibraryContext(otherHits, titleOf, lang);
+        } catch { /* 서재 전체 검색 실패는 무시 — 현재 책 컨텍스트로 계속 진행 */ }
+      }
+      const systemPrompt = buildDesktopSystemPrompt(mode, currentBook, notes, highlights, lang) + ragCtx;
       const response = await callAI(apiKeys, systemPrompt, history, text);
       setMessages(prev => [...prev, { role: "ai", content: response }]);
     } catch (e) {
@@ -2883,6 +3032,22 @@ function DesktopAI({ lang, isPC, apiKeys, currentBook, onShowSettings }) {
                 );
               })}
             </div>
+            <button
+              onClick={() => setLibraryWide(v => !v)}
+              title={lang === "ko" ? "스캔·인덱싱한 다른 책의 관련 구절도 답변에 참고합니다" : "Also reference related excerpts from your other scanned books"}
+              style={{
+                padding: "6px 10px", borderRadius: 9, cursor: "pointer", flexShrink: 0,
+                border: `1px solid ${libraryWide ? T.accent + "55" : T.border}`,
+                background: libraryWide ? T.accentSoft : "transparent",
+                color: libraryWide ? T.accentDeep : T.inkLight,
+                fontSize: 11, fontFamily: F.body,
+                display: "inline-flex", alignItems: "center", gap: 5, whiteSpace: "nowrap",
+              }}
+            >
+              <span>🧠</span>
+              <span style={{ fontWeight: libraryWide ? 700 : 500 }}>{lang === "ko" ? "서재 전체 참고" : "Whole library"}</span>
+              <span style={{ fontSize: 9.5, opacity: 0.75 }}>{libraryWide ? (lang === "ko" ? "켜짐" : "ON") : (lang === "ko" ? "꺼짐" : "OFF")}</span>
+            </button>
           </div>
 
           {/* Messages */}
