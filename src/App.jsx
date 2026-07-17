@@ -6,6 +6,7 @@ import { THEMES, TYPE_PAIRS } from './data.js';
 import { TabBar, Icon } from './components.jsx';
 import { Toaster } from './components/Toast.jsx';
 import { FamilySwitcher } from './components/FamilySwitcher.jsx';
+import { readRbSession, clearRbCookie, hubLoginUrl, hubLogoutUrl } from './utils/rarebookSso.js';
 import { GoogleLogo } from './screens/OnboardingFlow.jsx';
 import { LibraryScreen } from './screens/LibraryScreen.jsx';
 import { ReaderScreen } from './screens/ReaderScreen.jsx';
@@ -309,8 +310,39 @@ function SettingsPanel({ settings, setSettings, onClose, userConfig, onUpdateCon
           </div>
         </div>
 
+        {/* rarebook 통합 계정 (SSO) */}
+        <div style={{ borderTop: `1px solid ${T.border}`, paddingTop: 18, marginBottom: 16 }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: T.inkLight, letterSpacing: 1.2, textTransform: 'uppercase', fontFamily: F.body, marginBottom: 8 }}>
+            {lang === 'ko' ? 'rarebook 계정' : 'rarebook Account'}
+          </div>
+          {(() => {
+            const rb = readRbSession();
+            if (rb) {
+              return (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: T.surfaceAlt, borderRadius: 12, padding: '10px 13px', border: `1px solid ${T.border}` }}>
+                  <div style={{ width: 34, height: 34, borderRadius: 999, background: T.accentSoft, color: T.accent, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15, fontWeight: 700, flexShrink: 0 }}>
+                    {(rb.name || rb.email || '?')[0].toUpperCase()}
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: T.ink, fontFamily: F.body }}>{rb.name || (lang === 'ko' ? '회원' : 'Member')}</div>
+                    <div style={{ fontSize: 11, color: T.inkLight, fontFamily: F.body, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{rb.email || ''}</div>
+                  </div>
+                  <button onClick={() => { clearRbCookie(); window.location.href = hubLogoutUrl(); }} style={{ background: 'none', border: `1px solid ${T.border}`, borderRadius: 7, padding: '4px 9px', fontSize: 11, color: T.inkLight, fontFamily: F.body, cursor: 'pointer' }}>
+                    {lang === 'ko' ? '로그아웃' : 'Sign out'}
+                  </button>
+                </div>
+              );
+            }
+            return (
+              <button onClick={() => { window.location.href = hubLoginUrl(); }} style={{ width: '100%', padding: '12px 0', borderRadius: 12, border: 'none', background: T.accent, color: '#FFF', fontSize: 13, fontWeight: 700, fontFamily: F.body, cursor: 'pointer', boxShadow: `0 4px 16px ${T.accent}44` }}>
+                {lang === 'ko' ? '📚 rarebook 계정으로 로그인' : '📚 Sign in with rarebook'}
+              </button>
+            );
+          })()}
+        </div>
+
         {/* rarebook 패밀리 서비스 */}
-        <div style={{ borderTop: `1px solid ${T.border}`, paddingTop: 18, marginBottom: 20 }}>
+        <div style={{ marginBottom: 20 }}>
           <FamilySwitcher T={T} F={F} current="pkl" />
         </div>
 
