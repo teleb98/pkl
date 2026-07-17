@@ -41,6 +41,29 @@ export async function saveBookVectors(bookId, record) {
   } catch { return false; }
 }
 
+/** 인덱스된 모든 책의 메타 목록 — 무거운 vector 배열은 제외하고 요약만 반환.
+ *  [{ bookId, chunkCount, model, dim, builtAt }] */
+export async function listBookVectors() {
+  try {
+    const db = await openDB();
+    return await new Promise((resolve) => {
+      const store = db.transaction(STORE, 'readonly').objectStore(STORE);
+      const keysReq = store.getAllKeys();
+      const valsReq = store.getAll();
+      const tx = store.transaction;
+      tx.oncomplete = () => {
+        const keys = keysReq.result || [];
+        const vals = valsReq.result || [];
+        resolve(keys.map((bookId, i) => {
+          const r = vals[i] || {};
+          return { bookId, chunkCount: r.chunkCount || r.chunks?.length || 0, model: r.model || null, dim: r.dim || 0, builtAt: r.builtAt || null };
+        }).filter(x => x.chunkCount > 0));
+      };
+      tx.onerror = () => resolve([]);
+    });
+  } catch { return []; }
+}
+
 export async function deleteBookVectors(bookId) {
   try {
     const db = await openDB();

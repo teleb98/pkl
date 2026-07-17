@@ -6,6 +6,7 @@ import { getNotes, getAllHighlightsMerged, getSearchHistory, pushSearchHistory, 
 import { searchAllText } from '../pageTextCache.js';
 import { getLocalBooks } from '../utils/localBooks.js';
 import { hydrateBookText } from '../utils/fullBookScan.js';
+import { semanticSearchAll } from '../utils/ragSearch.js';
 
 function fmtDate(iso) {
   if (!iso) return '';
@@ -14,7 +15,7 @@ function fmtDate(iso) {
 
 const HIGHLIGHT_COLORS = { yellow: '#FFF3B0', green: '#D4EDDA', blue: '#D1ECF1', red: '#F8D7DA' };
 
-export function SearchScreen({ lang, onOpenBook }) {
+export function SearchScreen({ lang, onOpenBook, apiKeys }) {
   const { T, F } = useTheme();
   const t = i18n[lang];
   const [query, setQuery] = useState('');
@@ -25,6 +26,8 @@ export function SearchScreen({ lang, onOpenBook }) {
   const [allBooks, setAllBooks] = useState([]);
 
   const [hydrated, setHydrated] = useState(0); // 전문 복원 후 검색 재계산 트리거
+  const [semanticHits, setSemanticHits] = useState([]); // RAG(의미) 검색 결과
+  const [semLoading, setSemLoading] = useState(false);
 
   useEffect(() => {
     setHistory(getSearchHistory());
@@ -47,19 +50,36 @@ export function SearchScreen({ lang, onOpenBook }) {
     { key: 'all', label: lang === 'ko' ? '전체' : 'All' },
     { key: 'book', label: lang === 'ko' ? '책' : 'Books' },
     { key: 'text', label: lang === 'ko' ? '본문' : 'In-text' },
+    { key: 'semantic', label: lang === 'ko' ? '의미검색' : 'Semantic' },
     { key: 'highlight', label: lang === 'ko' ? '하이라이트' : 'Highlights' },
     { key: 'note', label: lang === 'ko' ? '메모' : 'Notes' },
   ];
 
+  const titleOf = (id) => {
+    const b = allBooks.find(x => x.id === id) || getLocalBooks().find(x => x.id === id);
+    return b?.aiTitle || b?.title || id;
+  };
+
   // 전문(본문) 검색 — 추출된 책 텍스트에서 query 매칭 (뷰어/AI로 텍스트가 채워진 책)
   const textHits = useMemo(() => {
     if (!query.trim() || (filter !== 'all' && filter !== 'text')) return [];
-    const titleOf = (id) => {
-      const b = allBooks.find(x => x.id === id) || getLocalBooks().find(x => x.id === id);
-      return b?.aiTitle || b?.title || id;
-    };
     return searchAllText(query, 5).map(h => ({ ...h, bookTitle: titleOf(h.bookId) }));
   }, [query, filter, allBooks, hydrated]); // eslint-disable-line
+
+  // 의미 검색(RAG) — Vision/스캔으로 만든 벡터 인덱스를 질의 임베딩으로 검색 (디바운스)
+  useEffect(() => {
+    if (!query.trim() || (filter !== 'all' && filter !== 'semantic')) { setSemanticHits([]); setSemLoading(false); return; }
+    let cancelled = false;
+    setSemLoading(true);
+    const id = setTimeout(async () => {
+      try {
+        const hits = await semanticSearchAll(query, { geminiKey: apiKeys?.gemini, total: 8 });
+        if (!cancelled) setSemanticHits(hits.map(h => ({ ...h, bookTitle: titleOf(h.bookId) })));
+      } catch { if (!cancelled) setSemanticHits([]); }
+      finally { if (!cancelled) setSemLoading(false); }
+    }, 350);
+    return () => { cancelled = true; clearTimeout(id); };
+  }, [query, filter, apiKeys]); // eslint-disable-line
 
   const allItems = useMemo(() => [
     ...allHighlights.map(h => ({ ...h, type: 'highlight' })),
@@ -188,6 +208,33 @@ export function SearchScreen({ lang, onOpenBook }) {
               <div style={{ height: 14 }} />
             </>
           )}
+          {((filter === 'all' && semanticHits.length > 0) || (filter === 'semantic' && (semLoading || semanticHits.length > 0))) && (
+            <>
+              <div style={{ fontSize: 10, fontWeight: 700, color: T.accent, letterSpacing: 1.3, textTransform: 'uppercase', fontFamily: F.body, marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
+                <Icon name="ai" size={12} color={T.accent} /> {lang === 'ko' ? `의미 검색 · ${semanticHits.length}` : `Semantic · ${semanticHits.length}`}
+              </div>
+              {semLoading && semanticHits.length === 0 && (
+                <div style={{ fontSize: 12.5, color: T.inkLight, fontFamily: F.body, padding: '4px 2px 12px' }}>
+                  {lang === 'ko' ? '의미가 가까운 구절을 찾는 중…' : 'Finding related passages…'}
+                </div>
+              )}
+              {semanticHits.map((h, i) => (
+                <div key={`sem-${h.bookId}-${h.page}-${i}`} style={{ background: T.surface, borderRadius: 12, padding: 13, marginBottom: 8, border: `1px solid ${T.accentSoft}` }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                    <div style={{ fontSize: 12, fontWeight: 600, color: T.inkMid, fontFamily: F.body, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      🔎 {h.bookTitle} <span style={{ color: T.inkLight, fontFamily: F.mono }}>· p.{h.page}</span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                      <span style={{ fontSize: 10, fontWeight: 700, color: T.accent, background: T.accentSoft, padding: '2px 7px', borderRadius: 999, fontFamily: F.mono }}>{Math.round(Math.max(0, h.score) * 100)}%</span>
+                      {onOpenBook && <button onClick={() => onOpenBook({ id: h.bookId, title: h.bookTitle })} style={{ padding: '5px 11px', borderRadius: 8, border: 'none', background: T.accent, color: '#FFF', fontSize: 11.5, fontFamily: F.body, fontWeight: 600, cursor: 'pointer' }}>{lang === 'ko' ? '열기' : 'Open'}</button>}
+                    </div>
+                  </div>
+                  <div style={{ fontSize: 12.5, color: T.inkMid, fontFamily: F.body, lineHeight: 1.55 }}>{h.text.length > 240 ? h.text.slice(0, 240) + '…' : h.text}</div>
+                </div>
+              ))}
+              <div style={{ height: 14 }} />
+            </>
+          )}
           {textHits.length > 0 && (
             <>
               <div style={{ fontSize: 10, fontWeight: 700, color: T.inkLight, letterSpacing: 1.3, textTransform: 'uppercase', fontFamily: F.body, marginBottom: 10 }}>
@@ -215,10 +262,11 @@ export function SearchScreen({ lang, onOpenBook }) {
               {filtered.map((item, i) => <SearchCard key={item.id || i} item={item} lang={lang} T={T} F={F} hl={hl} />)}
             </>
           )}
-          {filteredBooks.length === 0 && textHits.length === 0 && (filter === 'text' || filter === 'book' || filtered.length === 0) && (
+          {filteredBooks.length === 0 && textHits.length === 0 && semanticHits.length === 0 && !(filter === 'semantic' && semLoading) && (filter === 'text' || filter === 'book' || filter === 'semantic' || filtered.length === 0) && (
             <div style={{ fontSize: 14, color: T.inkLight, fontFamily: F.body, textAlign: 'center', padding: '32px 0' }}>
               {lang === 'ko' ? '검색 결과가 없어요' : 'No results found'}
               {filter === 'text' && <div style={{ fontSize: 11.5, marginTop: 6 }}>{lang === 'ko' ? '뷰어에서 연 책의 본문만 검색됩니다.' : 'Only books opened in the viewer are searchable.'}</div>}
+              {filter === 'semantic' && <div style={{ fontSize: 11.5, marginTop: 6 }}>{lang === 'ko' ? '전체 스캔(Vision)으로 RAG 인덱스를 만든 책만 의미 검색됩니다.' : 'Only books with a full-scan RAG index are searchable.'}</div>}
             </div>
           )}
         </div>

@@ -784,7 +784,7 @@ function MobileLayout({ settings, setSettings, userConfig, onSaveConfig, onAuthE
     const lang = settings.lang;
     if (screen === 'library')   return <LibraryScreen   lang={lang} setScreen={setScreen} openDriveSave={setDriveBook} userConfig={userConfig} onAddBook={() => setView('addbook')} onOpenBook={openBook} onAuthError={onAuthError} />;
     if (screen === 'reader')    return <ReaderScreen    lang={lang} setScreen={setScreen} openDriveSave={setDriveBook} currentBook={currentBook} apiKeys={userConfig?.apiKeys} />;
-    if (screen === 'search')    return <SearchScreen    lang={lang} onOpenBook={openBook} />;
+    if (screen === 'search')    return <SearchScreen    lang={lang} onOpenBook={openBook} apiKeys={userConfig?.apiKeys} />;
     if (screen === 'knowledge') return <KnowledgeScreen lang={lang} apiKeys={userConfig?.apiKeys} currentBook={currentBook} />;
     if (screen === 'goals')     return <GoalsScreen     lang={lang} currentBook={currentBook} onOpenBook={openBook} apiKeys={userConfig?.apiKeys} />;
     if (screen === 'ai')        return <AIChatScreen    lang={lang} apiKeys={userConfig?.apiKeys} currentBook={currentBook} />;

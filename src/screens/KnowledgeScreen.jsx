@@ -10,6 +10,7 @@ import {
 } from '../store.js';
 import { callAI } from '../aiClient.js';
 import { getDocumentText } from '../pageTextCache.js';
+import { listIndexedBooks, semanticSearchAll } from '../utils/ragSearch.js';
 import { printNotesAsPdf, downloadNotesAsMarkdown } from '../utils/exportNotes.js';
 import { ReviewCardModal } from '../components/ReviewCardModal.jsx';
 import { QuizModal } from '../components/QuizModal.jsx';
@@ -126,7 +127,15 @@ export function KnowledgeScreen({ lang, apiKeys, currentBook }) {
   // 5-1: Quiz state
   const [showQuiz, setShowQuiz] = useState(false);
 
+  // 지식 베이스(RAG) state — Vision/스캔으로 만든 벡터 인덱스 활용
+  const [kbBooks, setKbBooks]   = useState([]);
+  const [kbQuery, setKbQuery]   = useState('');
+  const [kbHits, setKbHits]     = useState([]);
+  const [kbLoading, setKbLoading] = useState(false);
+  const [kbSearched, setKbSearched] = useState(false);
+
   const books = useMemo(() => getBookIndex(), []);
+  const kbTitleOf = (id) => { const b = books.find(x => x.id === id); return b?.aiTitle || b?.title || id; };
 
   const reload = () => {
     const notes = getNotes().map(n => ({ ...n, type: 'note' }));
@@ -136,6 +145,21 @@ export function KnowledgeScreen({ lang, apiKeys, currentBook }) {
 
   useEffect(() => { reload(); }, []);
   useEffect(() => { setVocab(getVocabulary()); }, [mainTab]);
+  useEffect(() => {
+    if (mainTab !== 'kb') return;
+    listIndexedBooks({ geminiKey: apiKeys?.gemini }).then(setKbBooks).catch(() => setKbBooks([]));
+  }, [mainTab, apiKeys]);
+
+  const runKbSearch = async () => {
+    const q = kbQuery.trim();
+    if (!q || kbLoading) return;
+    setKbLoading(true); setKbHits([]); setKbSearched(true);
+    try {
+      const hits = await semanticSearchAll(q, { geminiKey: apiKeys?.gemini, total: 10 });
+      setKbHits(hits);
+    } catch { setKbHits([]); }
+    finally { setKbLoading(false); }
+  };
   useEffect(() => {
     if (fcBook) setFlashcards(getFlashcards(fcBook));
   }, [fcBook]);
@@ -375,6 +399,7 @@ export function KnowledgeScreen({ lang, apiKeys, currentBook }) {
             { k: 'notes',  l: lang === 'ko' ? '노트' : 'Notes',      icon: 'note' },
             { k: 'cards',  l: lang === 'ko' ? '카드' : 'Cards',      icon: 'column' },
             { k: 'vocab',  l: lang === 'ko' ? '어휘' : 'Vocab',      icon: 'spark' },
+            { k: 'kb',     l: lang === 'ko' ? '지식DB' : 'Base',      icon: 'search' },
             { k: 'quiz',   l: lang === 'ko' ? '퀴즈' : 'Quiz',        icon: 'help' },
           ].map(opt => (
             <button key={opt.k} onClick={() => setMainTab(opt.k)} style={{ flex: 1, padding: '9px 4px', borderRadius: 9, border: 'none', background: mainTab === opt.k ? T.surface : 'transparent', color: mainTab === opt.k ? T.ink : T.inkLight, fontSize: 12, fontWeight: mainTab === opt.k ? 700 : 400, fontFamily: F.body, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 4, boxShadow: mainTab === opt.k ? `0 1px 4px ${T.ink}15` : 'none', transition: 'all .2s' }}>
@@ -560,6 +585,89 @@ export function KnowledgeScreen({ lang, apiKeys, currentBook }) {
                 </div>
               </div>
             ))
+          )}
+        </div>
+      )}
+
+      {/* ── 지식 베이스(RAG) 탭 — Vision/스캔으로 만든 벡터 인덱스를 의미 검색 ── */}
+      {mainTab === 'kb' && (
+        <div style={{ padding: '0 22px' }}>
+          {kbBooks.length === 0 ? (
+            <div style={{ padding: '40px 4px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14, textAlign: 'center' }}>
+              <div style={{ width: 64, height: 64, borderRadius: 18, background: T.accentSoft, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <Icon name="search" size={28} color={T.accent} />
+              </div>
+              <div>
+                <div style={{ fontSize: 17, fontWeight: 600, color: T.ink, fontFamily: F.display, marginBottom: 8 }}>
+                  {lang === 'ko' ? '아직 지식 베이스가 없어요' : 'No knowledge base yet'}
+                </div>
+                <div style={{ fontSize: 13, color: T.inkLight, fontFamily: F.body, lineHeight: 1.65, maxWidth: 280 }}>
+                  {lang === 'ko'
+                    ? '뷰어에서 책을 전체 스캔(Vision)하면 RAG 인덱스가 만들어지고, 여기서 의미로 검색할 수 있어요.'
+                    : 'Full-scan a book (Vision) in the viewer to build a RAG index, then search it here.'}
+                </div>
+              </div>
+            </div>
+          ) : (
+            <>
+              {/* 질문 입력 */}
+              <div style={{ background: T.surface, borderRadius: 14, padding: '11px 14px', display: 'flex', alignItems: 'center', gap: 10, border: `1.5px solid ${kbQuery ? T.ink : T.border}`, marginBottom: 12 }}>
+                <Icon name="search" size={16} color={T.inkLight} />
+                <input
+                  value={kbQuery}
+                  onChange={e => setKbQuery(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') runKbSearch(); }}
+                  placeholder={lang === 'ko' ? '스캔한 책 전체에서 의미로 검색…' : 'Search your scanned books by meaning…'}
+                  style={{ flex: 1, border: 'none', outline: 'none', background: 'transparent', fontSize: 14, color: T.ink, fontFamily: F.body }}
+                />
+                <button onClick={runKbSearch} disabled={!kbQuery.trim() || kbLoading} style={{ padding: '6px 12px', borderRadius: 8, border: 'none', background: kbQuery.trim() ? T.accent : T.border, color: '#FFF', fontSize: 12, fontWeight: 600, fontFamily: F.body, cursor: kbQuery.trim() ? 'pointer' : 'default', flexShrink: 0 }}>
+                  {kbLoading ? (lang === 'ko' ? '검색 중…' : '…') : (lang === 'ko' ? '검색' : 'Search')}
+                </button>
+              </div>
+
+              {/* 인덱스된 책 목록 */}
+              <div style={{ fontSize: 10, fontWeight: 700, color: T.inkLight, letterSpacing: 1.3, textTransform: 'uppercase', fontFamily: F.body, marginBottom: 8 }}>
+                {lang === 'ko' ? `검색 가능한 책 · ${kbBooks.length}` : `Indexed books · ${kbBooks.length}`}
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 18 }}>
+                {kbBooks.map(b => (
+                  <span key={b.bookId} style={{ fontSize: 11.5, color: b.usable ? T.inkMid : T.inkLight, background: T.surfaceAlt, border: `1px solid ${T.border}`, padding: '5px 10px', borderRadius: 999, fontFamily: F.body, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                    📖 {kbTitleOf(b.bookId)} <span style={{ fontFamily: F.mono, color: T.inkLight }}>· {b.chunkCount}</span>
+                    {!b.usable && <span style={{ fontSize: 9.5, color: T.accentDeep }}>{lang === 'ko' ? '· 키필요' : '· key'}</span>}
+                  </span>
+                ))}
+              </div>
+
+              {/* 검색 결과(관련 구절) */}
+              {kbLoading && (
+                <div style={{ fontSize: 12.5, color: T.inkLight, fontFamily: F.body, padding: '4px 2px 12px' }}>
+                  {lang === 'ko' ? '의미가 가까운 구절을 찾는 중…' : 'Finding related passages…'}
+                </div>
+              )}
+              {!kbLoading && kbSearched && kbHits.length === 0 && (
+                <div style={{ fontSize: 13.5, color: T.inkLight, fontFamily: F.body, textAlign: 'center', padding: '28px 0' }}>
+                  {lang === 'ko' ? '관련 구절을 찾지 못했어요' : 'No related passages found'}
+                </div>
+              )}
+              {kbHits.length > 0 && (
+                <>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: T.accent, letterSpacing: 1.3, textTransform: 'uppercase', fontFamily: F.body, marginBottom: 10 }}>
+                    {lang === 'ko' ? `관련 구절 · ${kbHits.length}` : `Passages · ${kbHits.length}`}
+                  </div>
+                  {kbHits.map((h, i) => (
+                    <div key={`kb-${h.bookId}-${h.page}-${i}`} style={{ background: T.surface, borderRadius: 12, padding: 13, marginBottom: 8, border: `1px solid ${T.accentSoft}` }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                        <div style={{ fontSize: 12, fontWeight: 600, color: T.inkMid, fontFamily: F.body, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          🔎 {kbTitleOf(h.bookId)} <span style={{ color: T.inkLight, fontFamily: F.mono }}>· p.{h.page}</span>
+                        </div>
+                        <span style={{ fontSize: 10, fontWeight: 700, color: T.accent, background: T.accentSoft, padding: '2px 7px', borderRadius: 999, fontFamily: F.mono, flexShrink: 0 }}>{Math.round(Math.max(0, h.score) * 100)}%</span>
+                      </div>
+                      <div style={{ fontSize: 12.5, color: T.inkMid, fontFamily: F.body, lineHeight: 1.55 }}>{h.text.length > 280 ? h.text.slice(0, 280) + '…' : h.text}</div>
+                    </div>
+                  ))}
+                </>
+              )}
+            </>
           )}
         </div>
       )}
