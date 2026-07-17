@@ -610,6 +610,23 @@ export function KnowledgeScreen({ lang, apiKeys, currentBook }) {
             </div>
           ) : (
             <>
+              {/* 누적 지식 DB 요약 — 계속 읽고 스캔할수록 이 숫자가 커진다 */}
+              <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
+                <div style={{ flex: 1, background: T.accentSoft, borderRadius: 12, padding: '12px 14px', border: `1px solid ${T.accent}22` }}>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: T.accentDeep, letterSpacing: 1, textTransform: 'uppercase', fontFamily: F.body, marginBottom: 4 }}>{lang === 'ko' ? '누적 책' : 'Books'}</div>
+                  <div style={{ fontSize: 20, fontWeight: 700, color: T.ink, fontFamily: F.mono }}>{kbBooks.length}</div>
+                </div>
+                <div style={{ flex: 1, background: T.accentSoft, borderRadius: 12, padding: '12px 14px', border: `1px solid ${T.accent}22` }}>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: T.accentDeep, letterSpacing: 1, textTransform: 'uppercase', fontFamily: F.body, marginBottom: 4 }}>{lang === 'ko' ? '누적 구절' : 'Passages'}</div>
+                  <div style={{ fontSize: 20, fontWeight: 700, color: T.ink, fontFamily: F.mono }}>{kbBooks.reduce((s, b) => s + (b.chunkCount || 0), 0)}</div>
+                </div>
+              </div>
+              <div style={{ fontSize: 11, color: T.inkLight, fontFamily: F.body, lineHeight: 1.6, marginBottom: 16 }}>
+                {lang === 'ko'
+                  ? '책을 전체 스캔할 때마다 이 지식 DB에 계속 쌓여요 — AI 채팅에서 "서재 전체 참고"를 켜면 여기 쌓인 모든 책을 답변에 활용합니다.'
+                  : 'Every full scan adds to this knowledge base — enable "Reference whole library" in AI Chat to use everything indexed here.'}
+              </div>
+
               {/* 질문 입력 */}
               <div style={{ background: T.surface, borderRadius: 14, padding: '11px 14px', display: 'flex', alignItems: 'center', gap: 10, border: `1.5px solid ${kbQuery ? T.ink : T.border}`, marginBottom: 12 }}>
                 <Icon name="search" size={16} color={T.inkLight} />

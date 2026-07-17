@@ -495,6 +495,14 @@ export function estimateCompletion(bookId) {
   return { remaining, minutesLeft: Math.round(minutesLeft), daysLeft };
 }
 
+/* ── AI 독서 전략(책별) — 전체 스캔(RAG) 내용 + 실제 독서 속도로 생성한 맞춤 전략 ── */
+export function getReadingStrategy(bookId) {
+  try { return JSON.parse(localStorage.getItem(`pkl_strategy_${bookId}`) || 'null'); } catch { return null; }
+}
+export function saveReadingStrategy(bookId, strategy) {
+  localStorage.setItem(`pkl_strategy_${bookId}`, JSON.stringify({ ...strategy, generatedAt: Date.now() }));
+}
+
 /* ── Drive 백업 설정/이력 (Scenario 4-5) ────────────────── */
 const BACKUP_SETTINGS_KEY = 'pkl_backup_settings';
 const BACKUP_LOG_KEY = 'pkl_backup_log';

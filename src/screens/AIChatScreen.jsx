@@ -2,12 +2,13 @@ import { useState, useEffect, useRef } from 'react';
 import { i18n } from '../data.js';
 import { useTheme } from '../context.jsx';
 import { Icon, ScreenHeader } from '../components.jsx';
-import { getBookMeta, getNotes, getAllHighlightsByBook, getAiChat, saveAiChat } from '../store.js';
+import { getBookMeta, getBookIndex, getNotes, getAllHighlightsByBook, getAiChat, saveAiChat } from '../store.js';
 import { BookCompare } from '../components/BookCompare.jsx';
 import { buildMetaContext } from '../scanBook.js';
 import { getPageText, getDocumentText, getPageImage } from '../pageTextCache.js';
 import { ensureBookText } from '../utils/ensureBookText.js';
 import { queryBookIndex, formatRagContext } from '../utils/ragIndex.js';
+import { semanticSearchAll, formatLibraryContext } from '../utils/ragSearch.js';
 import { showError } from '../utils/toast.js';
 
 async function callClaude(apiKey, systemPrompt, history, userMsg, pageImageBase64 = null) {
@@ -118,6 +119,7 @@ export function AIChatScreen({ lang, apiKeys, currentBook, onOpenBook, setScreen
   const [loading, setLoading] = useState(false);
   const [notes, setNotes] = useState([]);
   const [highlights, setHighlights] = useState([]);
+  const [libraryWide, setLibraryWide] = useState(false); // 서재 전체(RAG 통합 DB) 참고 여부
   const scrollRef = useRef(null);
   const inputRef = useRef(null);
 
@@ -173,6 +175,18 @@ export function AIChatScreen({ lang, apiKeys, currentBook, onOpenBook, setScreen
         const hits = await queryBookIndex(currentBook.id, txt, { geminiKey: apiKeys?.gemini, topK: 5 });
         ragCtx = formatRagContext(hits, lang);
       } catch { /* RAG 조회 실패는 무시 — 기존 문서 컨텍스트로 계속 진행 */ }
+      // 서재 전체 참고(켜짐): 지금까지 스캔·인덱싱한 다른 책들의 RAG DB도 가로질러 검색.
+      // 읽은 책이 쌓일수록 이전 책의 관련 구절이 답변에 함께 활용된다.
+      if (libraryWide) {
+        try {
+          const otherHits = await semanticSearchAll(txt, {
+            geminiKey: apiKeys?.gemini, total: 5,
+            bookIds: getBookIndex().map(b => b.id).filter(id => id !== currentBook.id),
+          });
+          const titleOf = (id) => getBookIndex().find(b => b.id === id)?.title || id;
+          ragCtx += formatLibraryContext(otherHits, titleOf, lang);
+        } catch { /* 서재 전체 검색 실패는 무시 — 현재 책 컨텍스트로 계속 진행 */ }
+      }
       const systemPrompt = buildSystemPrompt(mode, currentBook, notes, highlights, lang, !!pageImg) + ragCtx;
       let reply;
       if (apiKeys?.claude) reply = await callClaude(apiKeys.claude, systemPrompt, history, txt, pageImg);
@@ -326,6 +340,27 @@ export function AIChatScreen({ lang, apiKeys, currentBook, onOpenBook, setScreen
               );
             })}
           </div>
+        )}
+
+        {tab === 'chat' && (
+          <button
+            onClick={() => setLibraryWide(v => !v)}
+            title={lang === 'ko' ? '스캔·인덱싱한 다른 책의 관련 구절도 답변에 참고합니다' : "Also reference related excerpts from your other scanned books"}
+            style={{
+              marginTop: 8, width: '100%', padding: '8px 10px', borderRadius: 10,
+              border: `1px solid ${libraryWide ? T.accent + '55' : T.border}`,
+              background: libraryWide ? T.accentSoft : 'transparent',
+              color: libraryWide ? T.accentDeep : T.inkLight,
+              fontSize: 11.5, fontFamily: F.body, cursor: 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+            }}
+          >
+            <span>🧠</span>
+            <span style={{ fontWeight: libraryWide ? 700 : 500 }}>
+              {lang === 'ko' ? '서재 전체 참고' : 'Reference whole library'}
+            </span>
+            <span style={{ fontSize: 10, opacity: 0.75 }}>{libraryWide ? (lang === 'ko' ? '켜짐' : 'ON') : (lang === 'ko' ? '꺼짐' : 'OFF')}</span>
+          </button>
         )}
       </div>
 

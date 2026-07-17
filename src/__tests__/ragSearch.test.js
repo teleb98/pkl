@@ -6,7 +6,7 @@ vi.mock('../utils/embeddings.js', () => ({ GEMINI_EMBED_MODEL: 'gemini-embed', L
 
 import { listBookVectors } from '../utils/bookVectorDb.js';
 import { queryBookIndex } from '../utils/ragIndex.js';
-import { listIndexedBooks, semanticSearchAll } from '../utils/ragSearch.js';
+import { listIndexedBooks, semanticSearchAll, formatLibraryContext } from '../utils/ragSearch.js';
 
 beforeEach(() => vi.clearAllMocks());
 
@@ -55,5 +55,29 @@ describe('semanticSearchAll', () => {
     await semanticSearchAll('질문', { bookIds: ['b'] });
     expect(queryBookIndex).toHaveBeenCalledTimes(1);
     expect(queryBookIndex).toHaveBeenCalledWith('b', '질문', expect.objectContaining({ topK: 3 }));
+  });
+});
+
+describe('formatLibraryContext', () => {
+  const titleOf = (id) => ({ a: '책A', b: '책B' }[id] || id);
+
+  it('빈 결과면 빈 문자열', () => {
+    expect(formatLibraryContext([], titleOf)).toBe('');
+    expect(formatLibraryContext(null, titleOf)).toBe('');
+  });
+
+  it('각 구절에 책 제목과 페이지를 붙여 서재 전체 헤더로 포맷', () => {
+    const out = formatLibraryContext(
+      [{ bookId: 'a', page: 3, text: '발췌1' }, { bookId: 'b', page: 9, text: '발췌2' }],
+      titleOf, 'ko',
+    );
+    expect(out).toContain('서재의 다른 책');
+    expect(out).toContain('《책A》 (p.3) 발췌1');
+    expect(out).toContain('《책B》 (p.9) 발췌2');
+  });
+
+  it('영문 lang 이면 영문 헤더', () => {
+    const out = formatLibraryContext([{ bookId: 'a', page: 1, text: 'x' }], titleOf, 'en');
+    expect(out).toContain('Related excerpts from other books');
   });
 });

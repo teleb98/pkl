@@ -9,11 +9,13 @@ import {
   getNotificationSettings, saveNotificationSettings,
   getMonthStats, getYearStats,
   getBackupSettings, appendBackupLog, getNotesByBook, getAllHighlightsByBook,
+  getReadingStrategy, saveReadingStrategy,
 } from '../store.js';
 import { backupBookToDrive } from '../utils/driveBackup.js';
 import { scheduleProgressAutoSync } from '../utils/autoProgressSync.js';
 import { renderStatsCard, downloadStatsCard, STATS_THEMES, fmtMinutes, monthName as monthLabel } from '../utils/statsCard.js';
 import { getWeeklyCoachData, generateCoachPrompt } from '../utils/readingCoach.js';
+import { generateReadingStrategy } from '../utils/readingStrategy.js';
 import { callAI } from '../aiClient.js';
 
 function pad(n) { return String(n).padStart(2, '0'); }
@@ -89,11 +91,46 @@ export function GoalsScreen({ lang, currentBook, onOpenBook, apiKeys }) {
   const [completion, setCompletion]   = useState(() => currentBook?.id ? estimateCompletion(currentBook.id) : null);
   const [notifSettings, setNotifSettings] = useState(() => getNotificationSettings());
   const [notifPermission, setNotifPermission] = useState(() => typeof Notification !== 'undefined' ? Notification.permission : 'default');
-  const [goalsTab, setGoalsTab] = useState('session'); // 'session' | 'stats'
+  const [goalsTab, setGoalsTab] = useState('session'); // 'session' | 'strategy' | 'stats'
   const [coachData, setCoachData] = useState(null);
   const [coachResponse, setCoachResponse] = useState('');
   const [coachLoading, setCoachLoading] = useState(false);
   const [coachError, setCoachError] = useState('');
+
+  // 독서 전략(책별 RAG 기반 맞춤 목표) state
+  const [strategy, setStrategy] = useState(() => currentBook?.id ? getReadingStrategy(currentBook.id) : null);
+  const [strategyLoading, setStrategyLoading] = useState(false);
+  const [strategyError, setStrategyError] = useState('');
+  useEffect(() => {
+    setStrategy(currentBook?.id ? getReadingStrategy(currentBook.id) : null);
+    setStrategyError('');
+  }, [currentBook?.id]);
+
+  const runGenerateStrategy = async () => {
+    if (!currentBook?.id || strategyLoading) return;
+    if (!apiKeys?.claude && !apiKeys?.gemini) {
+      setStrategyError(lang === 'ko' ? 'AI 키를 설정해주세요' : 'Set an API key first');
+      return;
+    }
+    setStrategyLoading(true);
+    setStrategyError('');
+    try {
+      const est = estimateCompletion(currentBook.id);
+      const result = await generateReadingStrategy(currentBook, {
+        lang, apiKeys, speed: readSpeed, remainingPages: est?.remaining ?? null,
+      });
+      saveReadingStrategy(currentBook.id, result);
+      setStrategy({ ...result, generatedAt: Date.now() });
+    } catch (e) {
+      setStrategyError(
+        e.message === 'no-scanned-text'
+          ? (lang === 'ko' ? '먼저 뷰어에서 책 전체를 스캔해주세요(Vision).' : 'Full-scan the book first (Vision) in the viewer.')
+          : (lang === 'ko' ? `전략 생성 실패: ${e.message}` : `Failed to generate: ${e.message}`)
+      );
+    } finally {
+      setStrategyLoading(false);
+    }
+  };
 
   // 4-4: 통계 카드
   const now = new Date();
@@ -335,8 +372,9 @@ export function GoalsScreen({ lang, currentBook, onOpenBook, apiKeys }) {
       <div style={{ padding: '0 22px 16px' }}>
         <div style={{ display: 'flex', background: T.surfaceAlt, borderRadius: 12, padding: 3, border: `1px solid ${T.border}` }}>
           {[
-            { key: 'session', label: lang === 'ko' ? '📖 세션' : '📖 Session' },
-            { key: 'stats',   label: lang === 'ko' ? '📊 통계 공유' : '📊 Stats Share' },
+            { key: 'session',  label: lang === 'ko' ? '📖 세션' : '📖 Session' },
+            { key: 'strategy', label: lang === 'ko' ? '📋 독서 전략' : '📋 Strategy' },
+            { key: 'stats',    label: lang === 'ko' ? '📊 통계 공유' : '📊 Stats Share' },
           ].map(tab => (
             <button
               key={tab.key}
@@ -790,6 +828,102 @@ export function GoalsScreen({ lang, currentBook, onOpenBook, apiKeys }) {
         </div>
       </div>
       </>}
+
+      {/* ── 독서 전략 탭 — 전체 스캔(RAG) + 실제 독서 속도로 맞춤 목표 생성 ── */}
+      {goalsTab === 'strategy' && (
+        <div style={{ padding: '0 22px 32px' }}>
+          {!currentBook ? (
+            <div style={{ padding: '40px 4px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14, textAlign: 'center' }}>
+              <div style={{ width: 64, height: 64, borderRadius: 18, background: T.accentSoft, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <Icon name="goals" size={28} color={T.accent} />
+              </div>
+              <div style={{ fontSize: 13, color: T.inkLight, fontFamily: F.body, lineHeight: 1.65, maxWidth: 260 }}>
+                {lang === 'ko' ? '서재에서 책을 열면 그 책의 독서 전략을 세울 수 있어요.' : 'Open a book from your library to build a reading strategy for it.'}
+              </div>
+            </div>
+          ) : (
+            <>
+              <div style={{ background: T.accentSoft, borderRadius: 14, padding: '12px 14px', border: `1px solid ${T.accent}22`, marginBottom: 14, display: 'flex', alignItems: 'center', gap: 10 }}>
+                <Icon name="library" size={16} color={T.accent} />
+                <div style={{ fontSize: 13, color: T.ink, fontFamily: 'serif', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{currentBook.title}</div>
+              </div>
+
+              <button
+                onClick={runGenerateStrategy}
+                disabled={strategyLoading}
+                style={{ width: '100%', padding: '13px 0', borderRadius: 12, border: 'none', background: strategyLoading ? T.border : T.accent, color: '#FFF', fontSize: 13.5, fontWeight: 700, fontFamily: F.body, cursor: strategyLoading ? 'default' : 'pointer', marginBottom: 10 }}
+              >
+                {strategyLoading
+                  ? (lang === 'ko' ? '전략 생성 중…' : 'Generating…')
+                  : strategy
+                    ? (lang === 'ko' ? '🔄 전략 다시 생성' : '🔄 Regenerate strategy')
+                    : (lang === 'ko' ? '📋 AI 독서 전략 생성' : '📋 Generate AI reading strategy')}
+              </button>
+
+              {strategyError && (
+                <div style={{ fontSize: 12, color: '#C0392B', fontFamily: F.body, marginBottom: 14, lineHeight: 1.55 }}>
+                  ⚠️ {strategyError}
+                </div>
+              )}
+
+              {strategy && (
+                <div style={{ background: T.surface, borderRadius: 16, padding: 18, border: `1px solid ${T.border}` }}>
+                  {/* 난이도 */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
+                    <span style={{ fontSize: 11, fontWeight: 700, color: T.accent, background: T.accentSoft, padding: '4px 10px', borderRadius: 999, fontFamily: F.body }}>
+                      {lang === 'ko' ? '난이도' : 'Difficulty'} · {strategy.difficulty || '—'}
+                    </span>
+                  </div>
+                  {strategy.difficultyReason && (
+                    <div style={{ fontSize: 12.5, color: T.inkMid, fontFamily: F.body, lineHeight: 1.6, marginBottom: 16 }}>{strategy.difficultyReason}</div>
+                  )}
+
+                  {/* 목표 */}
+                  <div style={{ display: 'flex', gap: 10, marginBottom: 18 }}>
+                    <div style={{ flex: 1, background: T.surfaceAlt, borderRadius: 12, padding: '12px 14px', border: `1px solid ${T.border}` }}>
+                      <div style={{ fontSize: 10, fontWeight: 700, color: T.inkLight, letterSpacing: 1, textTransform: 'uppercase', fontFamily: F.body, marginBottom: 4 }}>{lang === 'ko' ? '일일 목표' : 'Daily target'}</div>
+                      <div style={{ fontSize: 20, fontWeight: 700, color: T.ink, fontFamily: F.mono }}>{strategy.dailyPageTarget}<span style={{ fontSize: 12, color: T.inkLight }}>p</span></div>
+                    </div>
+                    <div style={{ flex: 1, background: T.surfaceAlt, borderRadius: 12, padding: '12px 14px', border: `1px solid ${T.border}` }}>
+                      <div style={{ fontSize: 10, fontWeight: 700, color: T.inkLight, letterSpacing: 1, textTransform: 'uppercase', fontFamily: F.body, marginBottom: 4 }}>{lang === 'ko' ? '예상 완독' : 'Est. finish'}</div>
+                      <div style={{ fontSize: 20, fontWeight: 700, color: T.ink, fontFamily: F.mono }}>{strategy.estimatedDays}<span style={{ fontSize: 12, color: T.inkLight }}>{lang === 'ko' ? '일' : 'd'}</span></div>
+                    </div>
+                  </div>
+
+                  {/* 집중 영역 */}
+                  {strategy.focusAreas?.length > 0 && (
+                    <div style={{ marginBottom: 16 }}>
+                      <div style={{ fontSize: 10, fontWeight: 700, color: T.inkLight, letterSpacing: 1.2, textTransform: 'uppercase', fontFamily: F.body, marginBottom: 8 }}>
+                        {lang === 'ko' ? '집중해서 볼 부분' : 'Focus areas'}
+                      </div>
+                      {strategy.focusAreas.map((f, i) => (
+                        <div key={i} style={{ display: 'flex', gap: 8, marginBottom: 6, fontSize: 12.5, color: T.inkMid, fontFamily: F.body, lineHeight: 1.55 }}>
+                          <span style={{ color: T.accent, flexShrink: 0 }}>▸</span><span>{f}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* 마일스톤 */}
+                  {strategy.milestones?.length > 0 && (
+                    <div>
+                      <div style={{ fontSize: 10, fontWeight: 700, color: T.inkLight, letterSpacing: 1.2, textTransform: 'uppercase', fontFamily: F.body, marginBottom: 8 }}>
+                        {lang === 'ko' ? '마일스톤' : 'Milestones'}
+                      </div>
+                      {strategy.milestones.map((m, i) => (
+                        <div key={i} style={{ display: 'flex', gap: 10, alignItems: 'baseline', marginBottom: 8, paddingLeft: 2 }}>
+                          <span style={{ fontSize: 11, fontWeight: 700, color: T.accent, fontFamily: F.body, minWidth: 44, flexShrink: 0 }}>{m.label}</span>
+                          <span style={{ fontSize: 12.5, color: T.inkMid, fontFamily: F.body, lineHeight: 1.5 }}>{m.goal}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 }

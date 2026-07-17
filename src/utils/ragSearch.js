@@ -38,3 +38,16 @@ export async function semanticSearchAll(query, { geminiKey, perBook = 3, total =
   all.sort((a, b) => b.score - a.score);
   return all.slice(0, total);
 }
+
+/** semanticSearchAll 결과(여러 책)를 AI 시스템 프롬프트용 텍스트 블록으로 변환.
+ *  단일 책용 formatRagContext(ragIndex.js)와 달리 책 제목을 함께 표기해
+ *  "서재 전체(다른 책 포함)에서 참고한 내용"임을 AI가 알 수 있게 한다. */
+export function formatLibraryContext(hits, titleOf, lang = 'ko') {
+  if (!hits?.length) return '';
+  const ko = lang === 'ko';
+  const header = ko
+    ? '[서재의 다른 책에서 찾은 관련 구절 — 관련도순]'
+    : '[Related excerpts from other books in your library — ranked by relevance]';
+  const body = hits.map(h => `《${titleOf(h.bookId)}》 (p.${h.page}) ${h.text}`).join('\n\n');
+  return `\n\n${header}\n${body}`;
+}
