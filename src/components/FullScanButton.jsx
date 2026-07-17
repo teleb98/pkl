@@ -7,8 +7,9 @@ import { getIndexStatus, buildBookIndex, removeBookIndex } from '../utils/ragInd
 /* 책 전체 텍스트 스캔 버튼 — 상세 모달(모바일/데스크톱) 공용.
    모든 페이지의 텍스트를 추출(스캔본은 Vision OCR)해 IndexedDB에 영구 저장.
    중단/이어하기 지원, 완료되면 AI·전문 검색·어휘/퀴즈가 책 전체를 활용한다.
-   전체 스캔이 끝나면 RAG 벡터 인덱스(청크+임베딩) 생성도 이어서 제공 —
-   AI 채팅이 "책 전체를 프롬프트에 욱여넣기" 대신 질문에 맞는 구절만 검색해 쓴다. */
+   전체 스캔이 끝나면 RAG 벡터 인덱스(청크+임베딩)를 자동으로 생성한다 —
+   AI 채팅이 "책 전체를 프롬프트에 욱여넣기" 대신 질문에 맞는 구절만 검색해 쓴다.
+   (Gemini 키 없으면 로컬 임베딩으로 자동 대체, 실패해도 조용히 무시) */
 export function FullScanButton({ book, lang, geminiKey }) {
   const { T, F } = useTheme();
   const ko = lang === 'ko';
@@ -49,7 +50,12 @@ export function FullScanButton({ book, lang, geminiKey }) {
         shouldStop: () => stopRef.current,
       });
       if (!aliveRef.current) return;
-      if (res.done) { setSt({ status: 'done', pages: res.scannedPages, ocr: res.ocrPages }); await refreshRagStatus(); }
+      if (res.done) {
+        setSt({ status: 'done', pages: res.scannedPages, ocr: res.ocrPages });
+        // 전체 스캔이 끝나면 RAG 인덱스를 자동 생성 — 별도로 "검색 인덱스 만들기"를
+        // 누르지 않아도 방금 인식한 내용이 검색·AI 질문에 바로 활용되게 한다.
+        await buildIndex();
+      }
       else setSt({ status: 'paused', page: res.scannedPages, total: res.totalPages });
     } catch (e) {
       if (aliveRef.current) setSt({ status: 'error', error: e.message });

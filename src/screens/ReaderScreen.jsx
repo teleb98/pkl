@@ -4,6 +4,8 @@ import { useTheme } from '../context.jsx';
 import { Button, Icon, ProgressBar, ScreenHeader } from '../components.jsx';
 import { getBookMeta, setBookMeta, addNote, addHighlight, getNotes, getAllHighlightsByBook, addSession, getAiChat, saveAiChat, getBookmarks, toggleBookmark, getReaderSettings, saveReaderSettings } from '../store.js';
 import { scheduleProgressAutoSync } from '../utils/autoProgressSync.js';
+import { mergePageText } from '../utils/bookTextDb.js';
+import { scheduleRagSync } from '../utils/autoRagSync.js';
 import { PdfViewer } from '../components/PdfViewer.jsx';
 import { TextSelectionAI } from '../components/TextSelectionAI.jsx';
 import { WordDefinition } from '../components/WordDefinition.jsx';
@@ -325,8 +327,14 @@ export function ReaderScreen({ lang, setScreen, openDriveSave, currentBook, apiK
       const res = await pdfViewerRef.current?.ocrPage(pdfPage, {
         onProgress: ({ engine, pct }) => setVisionOcr(s => s?.status === 'running' ? { ...s, engine, enginePct: pct } : s),
       });
-      if (res?.text) setVisionOcr({ status: 'done', ...res });
-      else setVisionOcr({ status: 'error', pageNum: pdfPage });
+      if (res?.text) {
+        setVisionOcr({ status: 'done', ...res });
+        // 단일 페이지 인식도 RAG 원천(bookTextDb)에 반영 + 인덱스 백그라운드 갱신
+        // — 그래야 검색·AI 질문이 지금 인식한 내용을 즉시 활용할 수 있다.
+        mergePageText(book.id, pdfPage, res.text)
+          .then(() => scheduleRagSync(book.id, { geminiKey: apiKeys?.gemini }))
+          .catch(() => {});
+      } else setVisionOcr({ status: 'error', pageNum: pdfPage });
     } catch {
       setVisionOcr({ status: 'error', pageNum: pdfPage });
     }

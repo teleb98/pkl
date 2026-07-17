@@ -44,6 +44,28 @@ export async function saveBookText(bookId, record) {
   } catch { return false; }
 }
 
+/**
+ * 뷰어의 단일 페이지 Vision 인식 결과를 전문 저장소에 합친다.
+ * 기존에는 단일 페이지 인식이 pageTextCache(메모리, 앱 재시작 시 소실)에만
+ * 저장되고 bookTextDb(RAG 인덱스의 원천)에는 반영되지 않아, "인식은 됐지만
+ * RAG로 검색할 수 없는" 텍스트가 생겼다. 페이지 단위로도 즉시 bookTextDb에
+ * 반영해 RAG 인덱스가 이를 따라잡을 수 있게 한다.
+ */
+export async function mergePageText(bookId, pageNum, text) {
+  if (!text?.trim()) return null;
+  const existing = await getBookText(bookId);
+  const pages = { ...(existing?.pages || {}), [pageNum]: text };
+  const record = {
+    pages,
+    totalPages: existing?.totalPages || 0,
+    scannedPages: Object.keys(pages).length,
+    done: existing?.done || false,
+    engine: existing?.engine || 'vision',
+  };
+  await saveBookText(bookId, record);
+  return record;
+}
+
 export async function deleteBookText(bookId) {
   try {
     const db = await openDB();
