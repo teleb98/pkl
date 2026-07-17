@@ -23,6 +23,7 @@ import { PklMark } from './Logo.jsx';
 import { getBackupSettings, saveBackupSettings, appendBackupLog, getLastBackupTime, appendProgressSyncLog, getLastProgressSyncTime, getNotesByBook, getAllHighlightsByBook, getBookIndex } from './store.js';
 import { backupAllToDrive, DriveError } from './utils/driveBackup.js';
 import { syncProgressWithDrive } from './utils/progressSync.js';
+import { flushProgressAutoSync } from './utils/autoProgressSync.js';
 import { syncLibraryDataWithDrive } from './utils/librarySync.js';
 import { checkAndFireReminder } from './utils/readingReminder.js';
 import { getCacheInfo, clearAllCache, deleteCachedPdf } from './utils/pdfCache.js';
@@ -838,6 +839,19 @@ export default function App() {
     const fn = () => setViewW(window.innerWidth);
     window.addEventListener('resize', fn);
     return () => window.removeEventListener('resize', fn);
+  }, []);
+
+  // 세션 종료(앱 백그라운드/종료) 시 대기 중인 진행률 자동 동기화를 즉시 flush.
+  // 모바일 PWA 는 대개 페이지 이동 디바운스(8s)가 끝나기 전에 백그라운드로 가므로,
+  // 이 flush 가 없으면 "세션 종료 시 자동 동기화"가 실제로는 동작하지 않는다.
+  useEffect(() => {
+    const onHidden = () => { if (document.visibilityState === 'hidden') flushProgressAutoSync(); };
+    document.addEventListener('visibilitychange', onHidden);
+    window.addEventListener('pagehide', flushProgressAutoSync);
+    return () => {
+      document.removeEventListener('visibilitychange', onHidden);
+      window.removeEventListener('pagehide', flushProgressAutoSync);
+    };
   }, []);
 
   // 독서 알림 — 화면/스크린 전환과 무관하게 앱이 열려있는 동안 항상 체크

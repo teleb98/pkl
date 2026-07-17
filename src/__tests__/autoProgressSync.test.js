@@ -16,7 +16,7 @@ vi.mock('../utils/librarySync.js', () => ({
 import { saveBackupSettings, getProgressSyncLog } from '../store.js';
 import { syncProgressWithDrive } from '../utils/progressSync.js';
 import { syncLibraryDataWithDrive } from '../utils/librarySync.js';
-import { scheduleProgressAutoSync, cancelScheduledProgressAutoSync } from '../utils/autoProgressSync.js';
+import { scheduleProgressAutoSync, cancelScheduledProgressAutoSync, flushProgressAutoSync } from '../utils/autoProgressSync.js';
 
 beforeEach(() => {
   localStorage.clear();
@@ -93,5 +93,37 @@ describe('scheduleProgressAutoSync', () => {
     await vi.advanceTimersByTimeAsync(0);
     const log = getProgressSyncLog();
     expect(log[0].status).toBe('ok');
+  });
+});
+
+/* 세션 종료(백그라운드/종료) 시 대기 중인 동기화를 디바운스 없이 즉시 실행 */
+describe('flushProgressAutoSync (세션 종료 flush)', () => {
+  it('대기 중인 스케줄을 디바운스 대기 없이 즉시 실행한다', async () => {
+    saveBackupSettings({ autoProgressSync: true, writeToken: 'TOKEN' });
+    scheduleProgressAutoSync(8000);                 // 아직 8초 안 지남
+    expect(syncProgressWithDrive).not.toHaveBeenCalled();
+    await flushProgressAutoSync();                   // 세션 종료 → 즉시 실행
+    expect(syncProgressWithDrive).toHaveBeenCalledWith('TOKEN');
+  });
+
+  it('대기 중인 스케줄이 없으면 no-op(null 반환)', () => {
+    expect(flushProgressAutoSync()).toBeNull();
+    expect(syncProgressWithDrive).not.toHaveBeenCalled();
+  });
+
+  it('flush 후 타이머가 제거되어 중복 실행되지 않는다', async () => {
+    saveBackupSettings({ autoProgressSync: true, writeToken: 'TOKEN' });
+    scheduleProgressAutoSync(8000);
+    await flushProgressAutoSync();
+    expect(syncProgressWithDrive).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(8000);          // 원래 타이머가 남아있었다면 또 실행됐을 것
+    expect(syncProgressWithDrive).toHaveBeenCalledTimes(1);
+  });
+
+  it('꺼져 있으면 스케줄 자체가 안 잡히므로 flush 도 no-op', async () => {
+    saveBackupSettings({ autoProgressSync: false, writeToken: 'TOKEN' });
+    scheduleProgressAutoSync(8000);
+    expect(flushProgressAutoSync()).toBeNull();
+    expect(syncProgressWithDrive).not.toHaveBeenCalled();
   });
 });
