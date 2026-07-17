@@ -3,9 +3,9 @@
  * www / cooking 과 동일한 콘텐츠·디자인(웜 종이·책 톤). current='pkl' 로 현재 서비스 표시.
  */
 export const RAREBOOK_SERVICES = [
-  { id: 'www',     emoji: '📚', name: '서점',       desc: '희귀 도서 스토어',    url: 'https://www.rarebook.co.kr' },
-  { id: 'pkl',     emoji: '📖', name: '독서 서재',   desc: 'AI 독서 · 지식 관리',  url: 'https://pkl.rarebook.co.kr' },
-  { id: 'cooking', emoji: '🍳', name: '쿠킹마스터',  desc: 'AI 식단 · 장보기',     url: 'https://cooking.rarebook.co.kr' },
+  { id: 'www',     emoji: '📚', name: '서점', desc: '희귀 도서 스토어',      url: 'https://www.rarebook.co.kr' },
+  { id: 'pkl',     emoji: '📖', name: '서재', desc: 'AI 독서 · 지식 관리',   url: 'https://pkl.rarebook.co.kr' },
+  { id: 'cooking', emoji: '🍳', name: '부엌', desc: '쿠킹마스터 · AI 식단',  url: 'https://cooking.rarebook.co.kr' },
 ];
 
 export function FamilySwitcher({ T, F, current = 'pkl' }) {
