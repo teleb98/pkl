@@ -13,10 +13,10 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.svg'],
       manifest: {
-        name: 'Personal Knowledge Library',
-        short_name: 'PKL',
+        name: 'rarebook 서재',
+        short_name: '서재',
         description: '내 책을 AI와 함께 읽고 지식을 쌓는 독서 앱',
-        theme_color: '#C45C26',
+        theme_color: '#B8440A',
         background_color: '#FAF7F2',
         display: 'standalone',
         orientation: 'any',  // 태블릿 가로/세로 모두 지원
