@@ -86,4 +86,30 @@ describe('GoalsScreen — 독서 전략 탭', () => {
     expect(screen.queryByText(/난이도.*보통/)).not.toBeInTheDocument();
     expect(screen.getByText('📋 AI 독서 전략 생성')).toBeInTheDocument();
   });
+
+  it('생성 직후(당일)에는 "시작한 지 얼마 안 됐어요" 진행 상황이 표시된다', async () => {
+    generateReadingStrategy.mockResolvedValue(VALID_STRATEGY);
+    renderWithTheme(<GoalsScreen lang="ko" currentBook={BOOK} apiKeys={{ gemini: 'k' }} />);
+    fireEvent.click(screen.getByText('📋 독서 전략'));
+    fireEvent.click(screen.getByText('📋 AI 독서 전략 생성'));
+    expect(await screen.findByText(/시작한 지 얼마 안 됐어요/)).toBeInTheDocument();
+  });
+
+  it('마일스톤을 클릭하면 완료 체크되고 다시 클릭하면 해제된다', async () => {
+    generateReadingStrategy.mockResolvedValue(VALID_STRATEGY);
+    renderWithTheme(<GoalsScreen lang="ko" currentBook={BOOK} apiKeys={{ gemini: 'k' }} />);
+    fireEvent.click(screen.getByText('📋 독서 전략'));
+    fireEvent.click(screen.getByText('📋 AI 독서 전략 생성'));
+    await screen.findByText('1~5장 완독');
+
+    const milestoneBtn = screen.getByText('1~5장 완독').closest('button');
+    expect(milestoneBtn).toHaveTextContent('⬜️');
+
+    fireEvent.click(milestoneBtn);
+    await waitFor(() => expect(getReadingStrategy('b1')?.milestoneDone).toEqual([true]));
+    expect(milestoneBtn).toHaveTextContent('✅');
+
+    fireEvent.click(milestoneBtn);
+    await waitFor(() => expect(getReadingStrategy('b1')?.milestoneDone).toEqual([false]));
+  });
 });

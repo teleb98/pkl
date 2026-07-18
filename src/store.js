@@ -499,8 +499,71 @@ export function estimateCompletion(bookId) {
 export function getReadingStrategy(bookId) {
   try { return JSON.parse(localStorage.getItem(`pkl_strategy_${bookId}`) || 'null'); } catch { return null; }
 }
+
+/** 새 전략 생성 시 호출 — 진행률 추적의 기준점(시작 페이지·총 페이지·생성 시각)을 함께 고정한다. */
 export function saveReadingStrategy(bookId, strategy) {
-  localStorage.setItem(`pkl_strategy_${bookId}`, JSON.stringify({ ...strategy, generatedAt: Date.now() }));
+  const meta = getBookMeta(bookId);
+  const record = {
+    ...strategy,
+    generatedAt: Date.now(),
+    startingPage: meta?.lastPage || 0,
+    totalPages: meta?.pages || strategy.totalPages || null,
+    milestoneDone: (strategy.milestones || []).map(() => false),
+  };
+  localStorage.setItem(`pkl_strategy_${bookId}`, JSON.stringify(record));
+  return record;
+}
+
+/** 마일스톤 체크 등 부분 갱신 — 진행률 기준점(generatedAt/startingPage/totalPages)은 건드리지 않는다. */
+export function updateReadingStrategy(bookId, patch) {
+  const existing = getReadingStrategy(bookId);
+  if (!existing) return null;
+  const record = { ...existing, ...patch };
+  localStorage.setItem(`pkl_strategy_${bookId}`, JSON.stringify(record));
+  return record;
+}
+
+export function toggleStrategyMilestone(bookId, index) {
+  const existing = getReadingStrategy(bookId);
+  if (!existing) return null;
+  const done = [...(existing.milestoneDone || existing.milestones?.map(() => false) || [])];
+  done[index] = !done[index];
+  return updateReadingStrategy(bookId, { milestoneDone: done });
+}
+
+/**
+ * 전략 대비 실제 독서 진행 상황 — 저장된 기준점(startingPage) 대비 현재 lastPage 로
+ * "궤도 이탈/양호"를 계산한다. 전략이 없으면 null.
+ */
+export function getStrategyProgress(bookId) {
+  const strategy = getReadingStrategy(bookId);
+  if (!strategy) return null;
+  const meta = getBookMeta(bookId);
+  const currentPage = meta?.lastPage || 0;
+  const startingPage = strategy.startingPage || 0;
+  const totalPages = strategy.totalPages || meta?.pages || null;
+  const target = strategy.dailyPageTarget || 0;
+
+  const daysElapsed = Math.max(0, Math.floor((Date.now() - strategy.generatedAt) / 86400000));
+  const pagesRead = Math.max(0, currentPage - startingPage);
+  const expectedPages = target * daysElapsed;
+  const pagesDiff = pagesRead - expectedPages;
+
+  let status = 'justStarted';
+  if (daysElapsed > 0 && target > 0) {
+    if (pagesDiff >= target) status = 'ahead';
+    else if (pagesDiff <= -target) status = 'behind';
+    else status = 'onTrack';
+  }
+
+  const remainingPages = totalPages != null ? Math.max(0, totalPages - currentPage) : null;
+  const projectedDaysLeft = target > 0 && remainingPages != null ? Math.ceil(remainingPages / target) : null;
+
+  return {
+    daysElapsed, pagesRead, expectedPages, pagesDiff, status,
+    remainingPages, projectedDaysLeft,
+    milestoneDone: strategy.milestoneDone || (strategy.milestones || []).map(() => false),
+  };
 }
 
 /* ── Drive 백업 설정/이력 (Scenario 4-5) ────────────────── */

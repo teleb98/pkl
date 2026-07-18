@@ -9,7 +9,7 @@ import {
   getNotificationSettings, saveNotificationSettings,
   getMonthStats, getYearStats,
   getBackupSettings, appendBackupLog, getNotesByBook, getAllHighlightsByBook,
-  getReadingStrategy, saveReadingStrategy,
+  getReadingStrategy, saveReadingStrategy, getStrategyProgress, toggleStrategyMilestone,
 } from '../store.js';
 import { backupBookToDrive } from '../utils/driveBackup.js';
 import { scheduleProgressAutoSync } from '../utils/autoProgressSync.js';
@@ -99,10 +99,12 @@ export function GoalsScreen({ lang, currentBook, onOpenBook, apiKeys }) {
 
   // 독서 전략(책별 RAG 기반 맞춤 목표) state
   const [strategy, setStrategy] = useState(() => currentBook?.id ? getReadingStrategy(currentBook.id) : null);
+  const [strategyProgress, setStrategyProgress] = useState(() => currentBook?.id ? getStrategyProgress(currentBook.id) : null);
   const [strategyLoading, setStrategyLoading] = useState(false);
   const [strategyError, setStrategyError] = useState('');
   useEffect(() => {
     setStrategy(currentBook?.id ? getReadingStrategy(currentBook.id) : null);
+    setStrategyProgress(currentBook?.id ? getStrategyProgress(currentBook.id) : null);
     setStrategyError('');
   }, [currentBook?.id]);
 
@@ -119,8 +121,9 @@ export function GoalsScreen({ lang, currentBook, onOpenBook, apiKeys }) {
       const result = await generateReadingStrategy(currentBook, {
         lang, apiKeys, speed: readSpeed, remainingPages: est?.remaining ?? null,
       });
-      saveReadingStrategy(currentBook.id, result);
-      setStrategy({ ...result, generatedAt: Date.now() });
+      const saved = saveReadingStrategy(currentBook.id, result);
+      setStrategy(saved);
+      setStrategyProgress(getStrategyProgress(currentBook.id));
     } catch (e) {
       setStrategyError(
         e.message === 'no-scanned-text'
@@ -130,6 +133,13 @@ export function GoalsScreen({ lang, currentBook, onOpenBook, apiKeys }) {
     } finally {
       setStrategyLoading(false);
     }
+  };
+
+  const toggleMilestone = (index) => {
+    if (!currentBook?.id) return;
+    toggleStrategyMilestone(currentBook.id, index);
+    setStrategy(getReadingStrategy(currentBook.id));
+    setStrategyProgress(getStrategyProgress(currentBook.id));
   };
 
   // 4-4: 통계 카드
@@ -878,6 +888,34 @@ export function GoalsScreen({ lang, currentBook, onOpenBook, apiKeys }) {
                     <div style={{ fontSize: 12.5, color: T.inkMid, fontFamily: F.body, lineHeight: 1.6, marginBottom: 16 }}>{strategy.difficultyReason}</div>
                   )}
 
+                  {/* 진행 상황 — 실제 독서와 전략 목표 비교 */}
+                  {strategyProgress && (() => {
+                    const STATUS_META = {
+                      justStarted: { emoji: '🆕', label: lang === 'ko' ? '시작한 지 얼마 안 됐어요' : 'Just getting started', color: T.inkLight, bg: T.surfaceAlt },
+                      ahead:       { emoji: '🚀', label: lang === 'ko' ? '목표보다 앞서가는 중' : 'Ahead of schedule', color: '#166534', bg: '#F0FDF4' },
+                      onTrack:     { emoji: '✅', label: lang === 'ko' ? '목표대로 잘 따라가는 중' : 'Right on track', color: T.accentDeep, bg: T.accentSoft },
+                      behind:      { emoji: '⚠️', label: lang === 'ko' ? '목표보다 뒤처지는 중' : 'Falling behind', color: '#B45309', bg: '#FEF3C7' },
+                    };
+                    const sm = STATUS_META[strategyProgress.status];
+                    return (
+                      <div style={{ background: sm.bg, borderRadius: 12, padding: '12px 14px', marginBottom: 16 }}>
+                        <div style={{ fontSize: 12.5, fontWeight: 700, color: sm.color, fontFamily: F.body, marginBottom: 6 }}>
+                          {sm.emoji} {sm.label}
+                        </div>
+                        <div style={{ fontSize: 11.5, color: T.inkMid, fontFamily: F.body, lineHeight: 1.6 }}>
+                          {lang === 'ko'
+                            ? `${strategyProgress.daysElapsed}일 경과 · 읽음 ${strategyProgress.pagesRead}p / 목표 ${strategyProgress.expectedPages}p`
+                            : `Day ${strategyProgress.daysElapsed} · read ${strategyProgress.pagesRead}p / target ${strategyProgress.expectedPages}p`}
+                          {strategyProgress.projectedDaysLeft != null && (
+                            lang === 'ko'
+                              ? ` · 이 페이스면 ${strategyProgress.projectedDaysLeft}일 남음`
+                              : ` · ${strategyProgress.projectedDaysLeft}d left at this pace`
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })()}
+
                   {/* 목표 */}
                   <div style={{ display: 'flex', gap: 10, marginBottom: 18 }}>
                     <div style={{ flex: 1, background: T.surfaceAlt, borderRadius: 12, padding: '12px 14px', border: `1px solid ${T.border}` }}>
@@ -904,18 +942,26 @@ export function GoalsScreen({ lang, currentBook, onOpenBook, apiKeys }) {
                     </div>
                   )}
 
-                  {/* 마일스톤 */}
+                  {/* 마일스톤 — 클릭해 완료 체크 */}
                   {strategy.milestones?.length > 0 && (
                     <div>
                       <div style={{ fontSize: 10, fontWeight: 700, color: T.inkLight, letterSpacing: 1.2, textTransform: 'uppercase', fontFamily: F.body, marginBottom: 8 }}>
                         {lang === 'ko' ? '마일스톤' : 'Milestones'}
                       </div>
-                      {strategy.milestones.map((m, i) => (
-                        <div key={i} style={{ display: 'flex', gap: 10, alignItems: 'baseline', marginBottom: 8, paddingLeft: 2 }}>
-                          <span style={{ fontSize: 11, fontWeight: 700, color: T.accent, fontFamily: F.body, minWidth: 44, flexShrink: 0 }}>{m.label}</span>
-                          <span style={{ fontSize: 12.5, color: T.inkMid, fontFamily: F.body, lineHeight: 1.5 }}>{m.goal}</span>
-                        </div>
-                      ))}
+                      {strategy.milestones.map((m, i) => {
+                        const done = !!(strategy.milestoneDone || [])[i];
+                        return (
+                          <button
+                            key={i}
+                            onClick={() => toggleMilestone(i)}
+                            style={{ display: 'flex', width: '100%', gap: 10, alignItems: 'baseline', marginBottom: 8, paddingLeft: 2, background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' }}
+                          >
+                            <span style={{ fontSize: 13, flexShrink: 0, lineHeight: 1.3 }}>{done ? '✅' : '⬜️'}</span>
+                            <span style={{ fontSize: 11, fontWeight: 700, color: done ? T.inkLight : T.accent, fontFamily: F.body, minWidth: 44, flexShrink: 0 }}>{m.label}</span>
+                            <span style={{ fontSize: 12.5, color: done ? T.inkLight : T.inkMid, fontFamily: F.body, lineHeight: 1.5, textDecoration: done ? 'line-through' : 'none' }}>{m.goal}</span>
+                          </button>
+                        );
+                      })}
                     </div>
                   )}
                 </div>

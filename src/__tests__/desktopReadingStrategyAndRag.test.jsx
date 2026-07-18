@@ -82,6 +82,27 @@ describe('DesktopGoals — 독서 전략 탭 (PC)', () => {
     fireEvent.click(screen.getByText('📋 AI 독서 전략 생성'));
     expect(await screen.findByText(/전체를 스캔해주세요/)).toBeInTheDocument();
   });
+
+  it('생성 직후에는 "시작한 지 얼마 안 됐어요" 진행 상황이 표시된다', async () => {
+    generateReadingStrategy.mockResolvedValue(VALID_STRATEGY);
+    renderShell('goals');
+    fireEvent.click(screen.getByText('📋 독서 전략'));
+    fireEvent.click(screen.getByText('📋 AI 독서 전략 생성'));
+    expect(await screen.findByText(/시작한 지 얼마 안 됐어요/)).toBeInTheDocument();
+  });
+
+  it('마일스톤 클릭으로 완료 체크·해제가 가능하다', async () => {
+    generateReadingStrategy.mockResolvedValue(VALID_STRATEGY);
+    renderShell('goals');
+    fireEvent.click(screen.getByText('📋 독서 전략'));
+    fireEvent.click(screen.getByText('📋 AI 독서 전략 생성'));
+    await screen.findByText('전반부 완독');
+
+    const milestoneBtn = screen.getByText('전반부 완독').closest('button');
+    fireEvent.click(milestoneBtn);
+    await waitFor(() => expect(getReadingStrategy('d-book-1')?.milestoneDone).toEqual([true]));
+    expect(milestoneBtn).toHaveTextContent('✅');
+  });
 });
 
 describe('DesktopAI — 서재 전체 참고 토글 (PC)', () => {
