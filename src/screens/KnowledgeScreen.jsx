@@ -17,6 +17,7 @@ import { QuizModal } from '../components/QuizModal.jsx';
 import { WikiConnectPanel } from '../components/WikiConnectPanel.jsx';
 import { RelatedWikiNotes } from '../components/RelatedWikiNotes.jsx';
 import { KnowledgeGapCard } from '../components/KnowledgeGapCard.jsx';
+import { KnowledgeBridgeCard } from '../components/KnowledgeBridgeCard.jsx';
 
 function fmtDate(iso) {
   if (!iso) return '';
@@ -399,6 +400,7 @@ export function KnowledgeScreen({ lang, apiKeys, currentBook }) {
       <div style={{ padding: '0 22px' }}>
         <WikiConnectPanel lang={lang} apiKeys={apiKeys} />
         <KnowledgeGapCard lang={lang} apiKeys={apiKeys} />
+        <KnowledgeBridgeCard lang={lang} />
         <RelatedWikiNotes book={currentBook} lang={lang} />
       </div>
 
