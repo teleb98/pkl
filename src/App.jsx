@@ -862,16 +862,6 @@ export default function App() {
     };
   }, []);
 
-  // 독서 알림 — 화면/스크린 전환과 무관하게 앱이 열려있는 동안 항상 체크.
-  // 모바일 레이아웃(MobileLayout)은 자체 currentBook 을 가지므로 그쪽에서
-  // 따로 처리한다 — 여기서 같이 돌리면 서로 다른 책 정보로 중복 발행될 수 있음.
-  useEffect(() => {
-    if (layout === 'mobile') return;
-    checkAndFireReminder(new Date(), currentBook);
-    const id = setInterval(() => checkAndFireReminder(new Date(), currentBook), 60 * 1000);
-    return () => clearInterval(id);
-  }, [layout, currentBook?.id]);
-
   const themeKey = settings.dark ? `${settings.theme}Dark` : settings.theme;
   const T = THEMES[themeKey] || THEMES.ember;
   const F = TYPE_PAIRS[settings.type] || TYPE_PAIRS.lora;
@@ -887,6 +877,17 @@ export default function App() {
   const [currentBook, setCurrentBook] = useState(null);
   const [driveBook, setDriveBook] = useState(null);
   const [showSettings, setShowSettings] = useState(false);
+
+  // 독서 알림 — 화면/스크린 전환과 무관하게 앱이 열려있는 동안 항상 체크.
+  // 모바일 레이아웃(MobileLayout)은 자체 currentBook 을 가지므로 그쪽에서
+  // 따로 처리한다 — 여기서 같이 돌리면 서로 다른 책 정보로 중복 발행될 수 있음.
+  // (layout·currentBook 선언 뒤에 위치해야 함 — 의존성 배열 TDZ 방지)
+  useEffect(() => {
+    if (layout === 'mobile') return;
+    checkAndFireReminder(new Date(), currentBook);
+    const id = setInterval(() => checkAndFireReminder(new Date(), currentBook), 60 * 1000);
+    return () => clearInterval(id);
+  }, [layout, currentBook?.id]);
 
   const saveConfig = useCallback((data) => {
     if (data) { localStorage.setItem('pkl_config', JSON.stringify(data)); setUserConfig(data); }
