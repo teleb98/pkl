@@ -41,8 +41,9 @@ describe('WikiConnectPanel — 연결·동기화 플로우', () => {
     expect(getWikiIndex().length).toBe(2);
     expect(buildWikiVectors).toHaveBeenCalledWith(expect.any(Array), { geminiKey: 'g-key' });
     expect(screen.getByText('볼트로 내보내기')).toBeInTheDocument(); // 연결 후 내보내기 노출
+    // 벡터 색인은 백그라운드 → 모델 배지는 비동기로 나타난다
+    expect(await screen.findByText('Gemini')).toBeInTheDocument();
     expect(getWikiConfig().vectorModel).toBe('gemini-text-embedding-004');
-    expect(screen.getByText('Gemini')).toBeInTheDocument(); // 의미 검색 모델 배지
   });
 
   it('로컬 임베딩 상태에서 Gemini 키가 있으면 업그레이드 버튼 → 재색인', async () => {

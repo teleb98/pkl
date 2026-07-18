@@ -19,20 +19,25 @@ export function WikiConnectPanel({ lang, apiKeys }) {
   const [status, setStatus] = useState('idle'); // idle | syncing | exporting | error
   const [error, setError] = useState('');
   const [exportMsg, setExportMsg] = useState('');
+  const [vectorizing, setVectorizing] = useState(false);
 
   async function runSync(token) {
     setStatus('syncing'); setError('');
     try {
       const res = await syncWikiIndex(token, { segments: DEFAULT_VAULT_PATH });
       saveWikiIndex(res.notes);
-      let vectorModel = null;
-      try { vectorModel = (await buildWikiVectors(res.notes, { geminiKey: apiKeys?.gemini })).model; }
-      catch { /* 벡터 색인 실패 시에도 토큰 검색으로 동작 */ }
+      // 연결을 먼저 확정 — "동기화 중"이 임베딩을 기다리다 멈추지 않게 한다
       setCfg(saveWikiConfig({
         connected: true, folderPath: DEFAULT_VAULT_PATH,
-        lastSync: Date.now(), count: res.count, truncated: res.truncated, vectorModel,
+        lastSync: Date.now(), count: res.count, truncated: res.truncated,
       }));
       setStatus('idle');
+      // 의미 색인(임베딩)은 백그라운드 — 느리거나 실패해도 연결·토큰 검색은 정상
+      setVectorizing(true);
+      buildWikiVectors(res.notes, { geminiKey: apiKeys?.gemini })
+        .then(v => setCfg(saveWikiConfig({ vectorModel: v.model })))
+        .catch(() => {})
+        .finally(() => setVectorizing(false));
     } catch (e) {
       setStatus('error');
       setError(
@@ -123,7 +128,11 @@ export function WikiConnectPanel({ lang, apiKeys }) {
               : (ko ? 'Drive의 Backups/cw_wiki 를 읽어 책의 주제·AI 대화와 위키를 이어줍니다. (가져오기는 읽기 전용)' : 'Reads Backups/cw_wiki from Drive to link your wiki with book topics and AI chat. (import is read-only)')}
       </div>
 
-      {cfg.connected && cfg.vectorModel && status !== 'error' && (
+      {cfg.connected && vectorizing && status !== 'error' && (
+        <div style={{ marginTop: 7, fontSize: 10.5, color: T.inkLight, fontFamily: F.body }}>🔎 {ko ? '의미 색인 만드는 중…' : 'Building semantic index…'}</div>
+      )}
+
+      {cfg.connected && cfg.vectorModel && !vectorizing && status !== 'error' && (
         <div style={{ marginTop: 7, display: 'flex', alignItems: 'center', gap: 8, fontSize: 10.5, color: T.inkLight, fontFamily: F.body }}>
           <span>{ko ? '의미 검색' : 'Semantic'}: <b style={{ color: cfg.vectorModel === GEMINI_EMBED_MODEL ? T.accent : T.inkMid }}>{cfg.vectorModel === GEMINI_EMBED_MODEL ? 'Gemini' : (ko ? '로컬' : 'Local')}</b></span>
           {cfg.vectorModel !== GEMINI_EMBED_MODEL && apiKeys?.gemini && (

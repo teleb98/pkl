@@ -10,8 +10,18 @@ class WikiDriveError extends Error {
   constructor(message, code) { super(message); this.name = 'WikiDriveError'; this.code = code; }
 }
 
-async function driveGet(token, url) {
-  const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+async function driveGet(token, url, { timeoutMs = 20000 } = {}) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  let res;
+  try {
+    res = await fetch(url, { headers: { Authorization: `Bearer ${token}` }, signal: ctrl.signal });
+  } catch (e) {
+    // 응답이 오지 않아 무한 대기하지 않도록 — 중단/네트워크 오류를 명시적 에러로
+    throw new WikiDriveError(e?.name === 'AbortError' ? 'timeout' : 'network', e?.name === 'AbortError' ? 'timeout' : 'network');
+  } finally {
+    clearTimeout(timer);
+  }
   if (!res.ok) {
     if (res.status === 401 || res.status === 403) throw new WikiDriveError('auth-expired', 'auth-expired');
     throw new WikiDriveError(`HTTP ${res.status}`, 'http-error');
@@ -83,16 +93,22 @@ export async function fetchFileText(token, fileId) {
  * 볼트를 스캔해 파싱된 위키 인덱스를 만든다.
  * @returns {Promise<{ folderId, notes:Array, count:number, truncated:boolean }>}
  */
-export async function syncWikiIndex(token, { segments = DEFAULT_VAULT_PATH, maxNotes = 400 } = {}) {
+export async function syncWikiIndex(token, { segments = DEFAULT_VAULT_PATH, maxNotes = 400, concurrency = 8, onProgress } = {}) {
   if (!token) throw new WikiDriveError('no-token', 'no-token');
   const folderId = await resolveFolderByPath(token, segments);
   const files = await listMarkdownFiles(token, folderId, { maxNotes });
   const notes = [];
-  for (const f of files) {
-    let text = '';
-    try { text = await fetchFileText(token, f.id); } catch { continue; } // 개별 실패는 건너뜀
-    const parsed = parseNote(f.name, text);
-    notes.push({ id: f.id, name: f.name, path: f.path, webViewLink: f.webViewLink, modifiedTime: f.modifiedTime, ...parsed });
+  // 순차 다운로드는 대형 볼트에서 매우 느리다 → 제한 병렬로 받되 개별 실패는 건너뜀
+  for (let i = 0; i < files.length; i += concurrency) {
+    const batch = files.slice(i, i + concurrency);
+    const results = await Promise.all(batch.map(async (f) => {
+      try { return { f, text: await fetchFileText(token, f.id) }; } catch { return null; }
+    }));
+    for (const r of results) {
+      if (!r) continue;
+      notes.push({ id: r.f.id, name: r.f.name, path: r.f.path, webViewLink: r.f.webViewLink, modifiedTime: r.f.modifiedTime, ...parseNote(r.f.name, r.text) });
+    }
+    onProgress?.(Math.min(i + concurrency, files.length), files.length);
   }
   return { folderId, notes, count: notes.length, truncated: files.length >= maxNotes };
 }
