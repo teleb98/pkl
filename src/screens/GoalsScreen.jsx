@@ -18,6 +18,8 @@ import { getWeeklyCoachData, generateCoachPrompt } from '../utils/readingCoach.j
 import { generateReadingStrategy } from '../utils/readingStrategy.js';
 import { recommendNextBook } from '../utils/nextBookRecommendation.js';
 import { LifestyleInsight } from '../components/LifestyleInsight.jsx';
+import { ReadingRhythmCard } from '../components/ReadingRhythmCard.jsx';
+import { KnowledgePathInsight } from '../components/KnowledgePathInsight.jsx';
 import { callAI } from '../aiClient.js';
 
 function pad(n) { return String(n).padStart(2, '0'); }
@@ -791,6 +793,11 @@ export function GoalsScreen({ lang, currentBook, onOpenBook, apiKeys }) {
           <div style={{ fontSize: 10, fontWeight: 700, color: T.inkLight, letterSpacing: 1.4, textTransform: 'uppercase', fontFamily: F.body, marginBottom: 12 }}>
             {lang === 'ko' ? '일일 독서 알림' : 'Daily Reading Reminder'}
           </div>
+          <ReadingRhythmCard
+            lang={lang}
+            currentTime={notifSettings.time}
+            onApplyTime={(time) => updateNotifSettings({ enabled: true, time })}
+          />
           {notifPermission === 'denied' ? (
             <div style={{ fontSize: 12, color: T.inkMid, fontFamily: F.body }}>
               {lang === 'ko' ? '알림이 차단됐습니다. 브라우저 설정에서 허용해주세요.' : 'Notifications blocked. Allow them in browser settings.'}
@@ -898,7 +905,8 @@ export function GoalsScreen({ lang, currentBook, onOpenBook, apiKeys }) {
 
                 {recs && (
                   <div style={{ marginTop: 14, display: 'flex', flexDirection: 'column', gap: 8, textAlign: 'left' }}>
-                    {recs.map(({ book, reason }) => (
+                    <KnowledgePathInsight path={recs.path} lang={lang} />
+                    {recs.items.map(({ book, reason }) => (
                       <div key={book.id} style={{ background: T.surface, borderRadius: 12, padding: 13, border: `1px solid ${T.border}` }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginBottom: 5 }}>
                           <div style={{ fontSize: 13.5, fontWeight: 600, color: T.ink, fontFamily: 'serif', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{book.title}</div>

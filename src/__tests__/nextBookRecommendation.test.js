@@ -44,29 +44,29 @@ describe('recommendNextBook', () => {
 
   it('AI 응답을 인덱스로 후보와 매칭해 반환한다', async () => {
     callAI.mockResolvedValue('[{"index": 2, "reason": "관심사와 잘 맞아요"}]');
-    const result = await recommendNextBook({ lang: 'ko', apiKeys: { gemini: 'k' } });
-    expect(result).toHaveLength(1);
-    expect(result[0].book.title).toBe('안 읽은 책2');
-    expect(result[0].reason).toBe('관심사와 잘 맞아요');
+    const { items } = await recommendNextBook({ lang: 'ko', apiKeys: { gemini: 'k' } });
+    expect(items).toHaveLength(1);
+    expect(items[0].book.title).toBe('안 읽은 책2');
+    expect(items[0].reason).toBe('관심사와 잘 맞아요');
   });
 
   it('여러 권 추천도 순서대로 매칭한다', async () => {
     callAI.mockResolvedValue('[{"index": 1, "reason": "이유1"}, {"index": 2, "reason": "이유2"}]');
-    const result = await recommendNextBook({ apiKeys: { gemini: 'k' } });
-    expect(result.map(r => r.book.id)).toEqual(['unread1', 'unread2']);
+    const { items } = await recommendNextBook({ apiKeys: { gemini: 'k' } });
+    expect(items.map(r => r.book.id)).toEqual(['unread1', 'unread2']);
   });
 
   it('코드펜스로 감싼 JSON 도 파싱한다', async () => {
     callAI.mockResolvedValue('```json\n[{"index": 1, "reason": "이유"}]\n```');
-    const result = await recommendNextBook({ apiKeys: { gemini: 'k' } });
-    expect(result[0].book.id).toBe('unread1');
+    const { items } = await recommendNextBook({ apiKeys: { gemini: 'k' } });
+    expect(items[0].book.id).toBe('unread1');
   });
 
   it('범위 밖 인덱스는 무시하고, 유효한 항목만 남긴다', async () => {
     callAI.mockResolvedValue('[{"index": 99, "reason": "무효"}, {"index": 1, "reason": "유효"}]');
-    const result = await recommendNextBook({ apiKeys: { gemini: 'k' } });
-    expect(result).toHaveLength(1);
-    expect(result[0].book.id).toBe('unread1');
+    const { items } = await recommendNextBook({ apiKeys: { gemini: 'k' } });
+    expect(items).toHaveLength(1);
+    expect(items[0].book.id).toBe('unread1');
   });
 
   it('JSON 이 아예 없는 응답이나 전부 무효한 인덱스는 에러', async () => {
@@ -98,5 +98,22 @@ describe('recommendNextBook', () => {
     callAI.mockClear();
     await recommendNextBook({ apiKeys: { gemini: 'k' }, healthBias: { label: 'medium' } });
     expect(callAI.mock.calls[0][1]).not.toContain('라이프스타일 인사이트');
+  });
+
+  it('완독 책의 지식 성장 경로를 프롬프트에 반영하고 path 를 함께 반환한다', async () => {
+    // 완독 책 3권(주제 반복) → 경로 형성
+    saveBookIndex([
+      { id: 'unread1', title: '안 읽은 책1' },
+      { id: 'd1', title: '완독A' }, { id: 'd2', title: '완독B' }, { id: 'd3', title: '완독C' },
+    ]);
+    setBookMeta('d1', { status: 'done', aiTopics: ['역사'], updatedAt: 1 });
+    setBookMeta('d2', { status: 'done', aiTopics: ['역사', '철학'], updatedAt: 2 });
+    setBookMeta('d3', { status: 'done', aiTopics: ['철학'], updatedAt: 3 });
+    callAI.mockResolvedValue('[{"index": 1, "reason": "이유"}]');
+
+    const { path } = await recommendNextBook({ apiKeys: { gemini: 'k' } });
+    expect(callAI.mock.calls[0][1]).toContain('지식 성장 경로');
+    expect(path.enough).toBe(true);
+    expect(path.coreTopics.map(c => c.topic)).toEqual(expect.arrayContaining(['역사', '철학']));
   });
 });

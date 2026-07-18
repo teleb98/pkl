@@ -2,6 +2,7 @@
    아직 읽지 않은 책 중 지금과 이어지는 책을 AI가 추천한다. */
 import { getBookIndex, getBookMeta } from '../store.js';
 import { callAI } from '../aiClient.js';
+import { getKnowledgePath, pathHintLine } from './knowledgePath.js';
 
 const MAX_CANDIDATES = 12;
 
@@ -24,7 +25,7 @@ function getInterestContext() {
     .filter(x => x.topics.length || x.summary);
 }
 
-function buildPrompt(lang, candidates, interest, healthBias) {
+function buildPrompt(lang, candidates, interest, healthBias, pathHint = '') {
   const candidateList = candidates.map((b, i) => {
     const meta = getBookMeta(b.id) || {};
     const parts = [`${i + 1}. 《${b.title}》`];
@@ -48,7 +49,7 @@ function buildPrompt(lang, candidates, interest, healthBias) {
     return `당신은 독서 추천 사서입니다. 사용자가 최근 읽었거나 읽고 있는 책들과,
 서재에 있지만 아직 읽지 않은 후보 목록이 있습니다. 관심사와 이어지는 책을
 1~3권 추천하고 이유를 설명하세요.
-${healthHint}
+${pathHint}${healthHint}
 ## 최근 읽은 책(관심사 근거)
 ${interestList}
 
@@ -64,7 +65,7 @@ ${candidateList}
   return `You are a reading recommendation librarian. Below are books the user
 recently read or is reading, and a list of unread candidates from their library.
 Recommend 1-3 books that connect to their interests, with reasons.
-${healthHint}
+${pathHint}${healthHint}
 ## Recently read (interest signal)
 ${interestList}
 
@@ -102,7 +103,9 @@ export async function recommendNextBook({ lang = 'ko', apiKeys, healthBias } = {
   const candidates = getUnreadCandidates().slice(0, MAX_CANDIDATES);
   if (!candidates.length) throw new Error('no-candidates');
   const interest = getInterestContext();
-  const prompt = buildPrompt(lang, candidates, interest, healthBias);
+  const path = getKnowledgePath();
+  const prompt = buildPrompt(lang, candidates, interest, healthBias, pathHintLine(path, lang));
   const raw = await callAI(apiKeys, prompt, [], lang === 'ko' ? '추천해줘' : 'Recommend');
-  return parseRecommendation(raw, candidates);
+  const items = parseRecommendation(raw, candidates);
+  return { items, path };
 }

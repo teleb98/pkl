@@ -26,9 +26,15 @@ import { saveBookIndex } from '../store.js';
 import { recommendNextBook } from '../utils/nextBookRecommendation.js';
 import { combineHealthSignals } from '../utils/lifestyleSignal.js';
 
-const REC_RESULT = [
-  { book: { id: 'rec1', title: '추천 책1' }, reason: '관심사와 이어져요' },
-];
+const REC_RESULT = {
+  items: [{ book: { id: 'rec1', title: '추천 책1' }, reason: '관심사와 이어져요' }],
+  path: { enough: false, coreTopics: [], emergingTopics: [] },
+};
+// 지식 성장 경로가 형성된 경우
+const REC_RESULT_WITH_PATH = {
+  items: REC_RESULT.items,
+  path: { enough: true, coreTopics: [{ topic: '역사', count: 2 }], emergingTopics: ['심리학'] },
+};
 
 beforeEach(() => {
   localStorage.clear();
@@ -61,7 +67,18 @@ describe('GoalsScreen(모바일) — 다음 읽을 책 추천', () => {
     expect(await screen.findByText('추천 책1')).toBeInTheDocument();
     expect(screen.getByText('관심사와 이어져요')).toBeInTheDocument();
     fireEvent.click(screen.getByText('열기'));
-    expect(onOpenBook).toHaveBeenCalledWith(REC_RESULT[0].book);
+    expect(onOpenBook).toHaveBeenCalledWith(REC_RESULT.items[0].book);
+  });
+
+  it('지식 성장 경로가 있으면 추천 위에 경로 인사이트를 함께 보여준다', async () => {
+    recommendNextBook.mockResolvedValue(REC_RESULT_WITH_PATH);
+    renderWithTheme(<GoalsScreen lang="ko" apiKeys={{ gemini: 'k' }} />);
+    fireEvent.click(screen.getByText('📋 독서 전략'));
+    fireEvent.click(screen.getByText('📖 다음 읽을 책 추천받기'));
+
+    expect(await screen.findByText('🧭 지식 성장 경로')).toBeInTheDocument();
+    expect(screen.getByText(/역사/)).toBeInTheDocument();
+    expect(screen.getByText(/심리학/)).toBeInTheDocument();
   });
 
   it('안 읽은 책이 없으면 안내 메시지', async () => {
@@ -98,6 +115,6 @@ describe('DesktopGoals(PC) — 다음 읽을 책 추천', () => {
 
     expect(await screen.findByText('추천 책1')).toBeInTheDocument();
     fireEvent.click(screen.getByText('열기'));
-    expect(onOpenBook).toHaveBeenCalledWith(REC_RESULT[0].book);
+    expect(onOpenBook).toHaveBeenCalledWith(REC_RESULT.items[0].book);
   });
 });

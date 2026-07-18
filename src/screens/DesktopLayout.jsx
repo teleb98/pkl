@@ -14,6 +14,9 @@ import { getBookMeta, setBookMeta, addNote, addHighlight, getNotes, deleteNote, 
 import { generateReadingStrategy } from '../utils/readingStrategy.js';
 import { recommendNextBook } from '../utils/nextBookRecommendation.js';
 import { LifestyleInsight } from '../components/LifestyleInsight.jsx';
+import { ReadingRhythmCard } from '../components/ReadingRhythmCard.jsx';
+import { KnowledgePathInsight } from '../components/KnowledgePathInsight.jsx';
+import { getNotificationSettings, saveNotificationSettings } from '../store.js';
 import { semanticSearchAll, formatLibraryContext, listIndexedBooks } from '../utils/ragSearch.js';
 import { renderStatsCard, downloadStatsCard, STATS_THEMES, fmtMinutes, monthName as monthLabelFn } from '../utils/statsCard.js';
 import { backupBookToDrive } from '../utils/driveBackup.js';
@@ -2517,6 +2520,13 @@ function DesktopGoals({ lang, isPC, currentBook, apiKeys, onOpenBook }) {
       {/* ── 세션 탭 ── */}
       {goalsTab === "session" && (
       <div style={{ flex: 1, overflowY: "auto", padding: "20px 28px 32px" }}>
+        <div style={{ maxWidth: 420 }}>
+          <ReadingRhythmCard
+            lang={lang}
+            currentTime={getNotificationSettings().time}
+            onApplyTime={(time) => saveNotificationSettings({ ...getNotificationSettings(), enabled: true, time })}
+          />
+        </div>
         {/* Top row: today's progress + goals */}
         <div style={{ display: "grid", gridTemplateColumns: isPC ? "1.2fr 1fr 1fr" : "1fr", gap: 16, marginBottom: 16 }}>
           {/* Today's progress */}
@@ -2681,7 +2691,8 @@ function DesktopGoals({ lang, isPC, currentBook, apiKeys, onOpenBook }) {
 
                 {recs && (
                   <div style={{ marginTop: 14, display: "flex", flexDirection: "column", gap: 8, textAlign: "left" }}>
-                    {recs.map(({ book, reason }) => (
+                    <KnowledgePathInsight path={recs.path} lang={lang} />
+                    {recs.items.map(({ book, reason }) => (
                       <div key={book.id} style={{ background: T.surface, borderRadius: 12, padding: 13, border: `1px solid ${T.border}` }}>
                         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, marginBottom: 5 }}>
                           <div style={{ fontSize: 13.5, fontWeight: 600, color: T.ink, fontFamily: "serif", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{book.title}</div>
