@@ -3,18 +3,25 @@ import { useTheme } from '../context.jsx';
 import { Icon } from '../components.jsx';
 import { addLocalBook, addLocalBooksNative, usesNativePicker } from '../utils/localBooks.js';
 import { DriveBookPicker } from '../components/DriveBookPicker.jsx';
+import { useGoogleAuth } from '../utils/useGoogleAuth.js';
+import { uploadBooksToDrive, PDF_UPLOAD_SCOPE } from '../utils/drivePdfUpload.js';
 import { showToast } from '../utils/toast.js';
 
 /* ════════════════════════════════════════════════════════════════
    Add Book flow — PDF 가져오기 / Drive 탐색기만 실제 동작.
+   로컬 PDF 추가 완료 시 Google Drive 업로드(MyLibrary/books/)를 제안한다.
    카메라 스캔·사진 라이브러리는 아직 구현 전이라 "준비 중" 안내만 표시.
    ════════════════════════════════════════════════════════════════ */
 
 export function AddBookFlow({ lang, onCancel, onComplete, userConfig, onUpdateConfig }) {
   const { T, F } = useTheme();
-  const [step, setStep] = useState("source"); // source | drivePicker
+  const [step, setStep] = useState("source"); // source | drivePicker | driveOffer
   const [importing, setImporting] = useState(false);
+  const [addedBooks, setAddedBooks] = useState([]);   // 방금 추가한 로컬 책들(업로드 제안 대상)
   const fileInputRef = useRef(null);
+
+  // 로컬 추가 완료 → Drive 업로드 제안 스텝으로
+  const offerUpload = (books) => { setAddedBooks(books); setStep("driveOffer"); };
 
   // 실제 로컬 PDF 가져오기 — Electron/Capacitor(네이티브 선택) / 웹(file input)
   const handleImportPdf = async () => {
@@ -22,9 +29,7 @@ export function AddBookFlow({ lang, onCancel, onComplete, userConfig, onUpdateCo
       setImporting(true);
       try {
         const added = await addLocalBooksNative(); // Electron 또는 Capacitor
-        if (added && added.length) {
-          onComplete && onComplete(added[0]); // 추가 완료 → 서재로 이동
-        }
+        if (added && added.length) offerUpload(added);
         // 취소(빈 배열)면 그대로 머무름
       } finally {
         setImporting(false);
@@ -40,17 +45,24 @@ export function AddBookFlow({ lang, onCancel, onComplete, userConfig, onUpdateCo
     if (!files.length) return;
     setImporting(true);
     try {
-      let first = null;
-      for (const f of files) {
-        const book = await addLocalBook(f);
-        if (!first) first = book;
-      }
-      if (first) onComplete && onComplete(first);
+      const added = [];
+      for (const f of files) added.push(await addLocalBook(f));
+      if (added.length) offerUpload(added);
     } finally {
       setImporting(false);
       e.target.value = '';
     }
   };
+
+  if (step === "driveOffer") {
+    return (
+      <DriveUploadOffer
+        lang={lang}
+        books={addedBooks}
+        onDone={() => onComplete && onComplete(addedBooks[0])}
+      />
+    );
+  }
   // DriveBookPicker 는 자체 헤더(브레드크럼/닫기/완료)를 가지므로 공용 탑바 없이 전체 화면 사용
   if (step === "drivePicker") {
     return (
@@ -104,6 +116,111 @@ export function AddBookFlow({ lang, onCancel, onComplete, userConfig, onUpdateCo
           { type: 'info' }
         );
       }} />
+    </div>
+  );
+}
+
+/* ── Drive 업로드 제안 — 로컬 추가 직후 원본 PDF 를 MyLibrary/books/ 로 백업 ── */
+function DriveUploadOffer({ lang, books, onDone }) {
+  const { T, F } = useTheme();
+  const ko = lang === 'ko';
+  const [status, setStatus] = useState('offer'); // offer | uploading | done | error
+  const [progress, setProgress] = useState('');
+  const [result, setResult] = useState(null);
+
+  const startUpload = useGoogleAuth({
+    scope: PDF_UPLOAD_SCOPE,
+    onSuccess: async ({ access_token }) => {
+      setStatus('uploading');
+      try {
+        const res = await uploadBooksToDrive(access_token, books, {
+          onProgress: (i, total, title) => setProgress(ko ? `${i}/${total} 《${title}》 업로드 중…` : `Uploading ${i}/${total} 《${title}》…`),
+        });
+        setResult(res);
+        setStatus('done');
+      } catch {
+        setStatus('error');
+      }
+    },
+    onError: () => setStatus('error'),
+  });
+
+  const uploading = status === 'uploading';
+
+  return (
+    <div style={{ position: "absolute", inset: "44px 0 0 0", background: T.bg, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 24 }}>
+      <div style={{ width: "100%", maxWidth: 380, background: T.surface, borderRadius: 18, border: `1px solid ${T.border}`, padding: "26px 24px", textAlign: "center", boxShadow: `0 8px 30px -14px ${T.ink}44` }}>
+        <div style={{ fontSize: 34 }}>{status === 'done' ? '✅' : '☁️'}</div>
+
+        {status === 'offer' && (
+          <>
+            <div style={{ fontSize: 15.5, fontWeight: 700, color: T.ink, fontFamily: F.display, marginTop: 12 }}>
+              {ko ? `${books.length}권을 서재에 추가했어요` : `Added ${books.length} book${books.length > 1 ? 's' : ''}`}
+            </div>
+            <div style={{ fontSize: 12.5, color: T.inkMid, fontFamily: F.body, lineHeight: 1.6, marginTop: 8 }}>
+              {ko ? 'Google Drive(MyLibrary/books/)에도 업로드해 두면 다른 기기에서도 열 수 있어요.'
+                  : 'Upload to Google Drive (MyLibrary/books/) to open them on other devices too.'}
+            </div>
+            <div style={{ marginTop: 10, fontSize: 11.5, color: T.inkLight, fontFamily: F.body, lineHeight: 1.5, maxHeight: 66, overflowY: 'auto' }}>
+              {books.slice(0, 3).map(b => `《${b.title}》`).join(' · ')}{books.length > 3 ? ` ${ko ? '외' : '+'} ${books.length - 3}` : ''}
+            </div>
+            <button
+              onClick={startUpload}
+              style={{ marginTop: 16, width: '100%', padding: '12px 0', borderRadius: 12, border: 'none', background: T.accent, color: '#FFF', fontSize: 13.5, fontWeight: 700, fontFamily: F.body, cursor: 'pointer' }}
+            >
+              ☁️ {ko ? 'Google Drive에 업로드' : 'Upload to Google Drive'}
+            </button>
+            <button
+              onClick={onDone}
+              style={{ marginTop: 8, width: '100%', padding: '11px 0', borderRadius: 12, border: `1px solid ${T.border}`, background: 'transparent', color: T.inkMid, fontSize: 13, fontWeight: 600, fontFamily: F.body, cursor: 'pointer' }}
+            >
+              {ko ? '건너뛰기' : 'Skip'}
+            </button>
+          </>
+        )}
+
+        {uploading && (
+          <>
+            <div style={{ fontSize: 15.5, fontWeight: 700, color: T.ink, fontFamily: F.display, marginTop: 12 }}>
+              {ko ? 'Drive에 업로드 중' : 'Uploading to Drive'}
+            </div>
+            <div style={{ fontSize: 12, color: T.inkMid, fontFamily: F.body, marginTop: 8 }}>{progress}</div>
+          </>
+        )}
+
+        {status === 'done' && result && (
+          <>
+            <div style={{ fontSize: 15.5, fontWeight: 700, color: T.ink, fontFamily: F.display, marginTop: 12 }}>
+              {ko ? '업로드 완료' : 'Upload complete'}
+            </div>
+            <div style={{ fontSize: 12.5, color: T.inkMid, fontFamily: F.body, lineHeight: 1.6, marginTop: 8 }}>
+              {ko
+                ? `${result.done}권 업로드${result.failed ? ` · ${result.failed}권 실패` : ''} → MyLibrary/books/`
+                : `${result.done} uploaded${result.failed ? ` · ${result.failed} failed` : ''} → MyLibrary/books/`}
+            </div>
+            <button
+              onClick={onDone}
+              style={{ marginTop: 16, width: '100%', padding: '12px 0', borderRadius: 12, border: 'none', background: T.accent, color: '#FFF', fontSize: 13.5, fontWeight: 700, fontFamily: F.body, cursor: 'pointer' }}
+            >
+              {ko ? '서재로 가기' : 'Go to library'}
+            </button>
+          </>
+        )}
+
+        {status === 'error' && (
+          <>
+            <div style={{ fontSize: 13, color: '#C0392B', fontFamily: F.body, marginTop: 12, lineHeight: 1.5 }}>
+              ⚠️ {ko ? '업로드에 실패했어요. 책은 서재에 정상 추가되어 있어요.' : 'Upload failed. Your books are still added locally.'}
+            </div>
+            <button
+              onClick={onDone}
+              style={{ marginTop: 14, width: '100%', padding: '12px 0', borderRadius: 12, border: 'none', background: T.accent, color: '#FFF', fontSize: 13.5, fontWeight: 700, fontFamily: F.body, cursor: 'pointer' }}
+            >
+              {ko ? '서재로 가기' : 'Go to library'}
+            </button>
+          </>
+        )}
+      </div>
     </div>
   );
 }
