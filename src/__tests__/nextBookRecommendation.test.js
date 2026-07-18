@@ -81,4 +81,22 @@ describe('recommendNextBook', () => {
     callAI.mockRejectedValue(new Error('no-key'));
     await expect(recommendNextBook({ apiKeys: {} })).rejects.toThrow('no-key');
   });
+
+  it('healthBias.label=high 면 라이프스타일 인사이트 힌트를 프롬프트에 포함한다', async () => {
+    callAI.mockResolvedValue('[{"index": 1, "reason": "이유"}]');
+    await recommendNextBook({ apiKeys: { gemini: 'k' }, healthBias: { label: 'high' } });
+    const [, prompt] = callAI.mock.calls[0];
+    expect(prompt).toContain('라이프스타일 인사이트');
+    expect(prompt).toContain('건강/웰빙');
+  });
+
+  it('healthBias 가 없거나 high 가 아니면 힌트를 넣지 않는다(하위 호환)', async () => {
+    callAI.mockResolvedValue('[{"index": 1, "reason": "이유"}]');
+    await recommendNextBook({ apiKeys: { gemini: 'k' } });
+    expect(callAI.mock.calls[0][1]).not.toContain('라이프스타일 인사이트');
+
+    callAI.mockClear();
+    await recommendNextBook({ apiKeys: { gemini: 'k' }, healthBias: { label: 'medium' } });
+    expect(callAI.mock.calls[0][1]).not.toContain('라이프스타일 인사이트');
+  });
 });

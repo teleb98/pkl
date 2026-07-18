@@ -13,6 +13,7 @@ import { showError } from '../utils/toast.js';
 import { getBookMeta, setBookMeta, addNote, addHighlight, getNotes, deleteNote, deleteHighlight, getGoals, saveGoals, addSession, getSessions, getWeekStats, getSearchHistory, pushSearchHistory, getBookIndex, saveBookIndex, getAiChat, saveAiChat, getBookmarks, toggleBookmark, getReaderSettings, saveReaderSettings, getMonthStats, getYearStats, getBackupSettings, appendBackupLog, getNotesByBook, getAllHighlightsByBook, getAllHighlightsMerged, getVocabulary, addVocabularyEntry, getPdfAnnotations, addPdfAnnotation, computeReadingSpeed, estimateCompletion, getReadingStrategy, saveReadingStrategy, getStrategyProgress, toggleStrategyMilestone } from '../store.js';
 import { generateReadingStrategy } from '../utils/readingStrategy.js';
 import { recommendNextBook } from '../utils/nextBookRecommendation.js';
+import { LifestyleInsight } from '../components/LifestyleInsight.jsx';
 import { semanticSearchAll, formatLibraryContext, listIndexedBooks } from '../utils/ragSearch.js';
 import { renderStatsCard, downloadStatsCard, STATS_THEMES, fmtMinutes, monthName as monthLabelFn } from '../utils/statsCard.js';
 import { backupBookToDrive } from '../utils/driveBackup.js';
@@ -2279,6 +2280,7 @@ function DesktopGoals({ lang, isPC, currentBook, apiKeys, onOpenBook }) {
   const [recs, setRecs] = useState(null);
   const [recsLoading, setRecsLoading] = useState(false);
   const [recsError, setRecsError] = useState("");
+  const [healthBias, setHealthBias] = useState(null); // 라이프스타일 인사이트(서재·부엌·서점 종합)
   const runRecommend = async () => {
     if (recsLoading) return;
     if (!apiKeys?.claude && !apiKeys?.gemini) {
@@ -2288,7 +2290,7 @@ function DesktopGoals({ lang, isPC, currentBook, apiKeys, onOpenBook }) {
     setRecsLoading(true);
     setRecsError("");
     try {
-      setRecs(await recommendNextBook({ lang, apiKeys }));
+      setRecs(await recommendNextBook({ lang, apiKeys, healthBias }));
     } catch (e) {
       setRecsError(
         e.message === "no-candidates"
@@ -2662,6 +2664,7 @@ function DesktopGoals({ lang, isPC, currentBook, apiKeys, onOpenBook }) {
 
               {/* 다음 읽을 책 추천 */}
               <div style={{ width: "100%", maxWidth: 380, marginTop: 10, paddingTop: 20, borderTop: `1px solid ${T.border}` }}>
+                <LifestyleInsight lang={lang} onSignal={setHealthBias} />
                 <button
                   onClick={runRecommend}
                   disabled={recsLoading}

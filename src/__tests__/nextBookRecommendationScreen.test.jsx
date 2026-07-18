@@ -13,11 +13,18 @@ vi.mock('../utils/ragSearch.js', () => ({
   formatLibraryContext: vi.fn(() => ''),
   listIndexedBooks: vi.fn(async () => []),
 }));
+vi.mock('../utils/lifestyleSignal.js', () => ({
+  computeLocalHealthInterest: vi.fn(() => ({ score: 0, label: 'none', evidence: [] })),
+  fetchCookingHealthSignal: vi.fn(async () => null),
+  fetchWwwHealthSignal: vi.fn(async () => null),
+  combineHealthSignals: vi.fn(() => ({ score: 0, label: 'none', sources: [] })),
+}));
 
 import { GoalsScreen } from '../screens/GoalsScreen.jsx';
 import { DesktopShell } from '../screens/DesktopLayout.jsx';
 import { saveBookIndex } from '../store.js';
 import { recommendNextBook } from '../utils/nextBookRecommendation.js';
+import { combineHealthSignals } from '../utils/lifestyleSignal.js';
 
 const REC_RESULT = [
   { book: { id: 'rec1', title: '추천 책1' }, reason: '관심사와 이어져요' },
@@ -63,6 +70,19 @@ describe('GoalsScreen(모바일) — 다음 읽을 책 추천', () => {
     fireEvent.click(screen.getByText('📋 독서 전략'));
     fireEvent.click(screen.getByText('📖 다음 읽을 책 추천받기'));
     expect(await screen.findByText(/안 읽은 책이 서재에 없어요/)).toBeInTheDocument();
+  });
+
+  it('라이프스타일 인사이트(건강 지향)가 감지되면 추천 호출에 healthBias 로 전달된다', async () => {
+    combineHealthSignals.mockReturnValue({ score: 70, label: 'high', sources: [{ key: 'cooking', score: 70 }] });
+    recommendNextBook.mockResolvedValue(REC_RESULT);
+    renderWithTheme(<GoalsScreen lang="ko" apiKeys={{ gemini: 'k' }} />);
+    fireEvent.click(screen.getByText('📋 독서 전략'));
+    await screen.findByText('뚜렷함'); // LifestyleInsight 렌더 대기(onSignal 반영 확인)
+
+    fireEvent.click(screen.getByText('📖 다음 읽을 책 추천받기'));
+    await waitFor(() => expect(recommendNextBook).toHaveBeenCalledWith(
+      expect.objectContaining({ healthBias: expect.objectContaining({ label: 'high' }) }),
+    ));
   });
 });
 

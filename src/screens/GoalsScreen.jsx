@@ -17,6 +17,7 @@ import { renderStatsCard, downloadStatsCard, STATS_THEMES, fmtMinutes, monthName
 import { getWeeklyCoachData, generateCoachPrompt } from '../utils/readingCoach.js';
 import { generateReadingStrategy } from '../utils/readingStrategy.js';
 import { recommendNextBook } from '../utils/nextBookRecommendation.js';
+import { LifestyleInsight } from '../components/LifestyleInsight.jsx';
 import { callAI } from '../aiClient.js';
 
 function pad(n) { return String(n).padStart(2, '0'); }
@@ -147,6 +148,7 @@ export function GoalsScreen({ lang, currentBook, onOpenBook, apiKeys }) {
   const [recs, setRecs] = useState(null);
   const [recsLoading, setRecsLoading] = useState(false);
   const [recsError, setRecsError] = useState('');
+  const [healthBias, setHealthBias] = useState(null); // 라이프스타일 인사이트(서재·부엌·서점 종합)
   const runRecommend = async () => {
     if (recsLoading) return;
     if (!apiKeys?.claude && !apiKeys?.gemini) {
@@ -156,7 +158,7 @@ export function GoalsScreen({ lang, currentBook, onOpenBook, apiKeys }) {
     setRecsLoading(true);
     setRecsError('');
     try {
-      setRecs(await recommendNextBook({ lang, apiKeys }));
+      setRecs(await recommendNextBook({ lang, apiKeys, healthBias }));
     } catch (e) {
       setRecsError(
         e.message === 'no-candidates'
@@ -879,6 +881,7 @@ export function GoalsScreen({ lang, currentBook, onOpenBook, apiKeys }) {
 
               {/* 다음 읽을 책 추천 */}
               <div style={{ width: '100%', maxWidth: 340, marginTop: 10, paddingTop: 20, borderTop: `1px solid ${T.border}` }}>
+                <LifestyleInsight lang={lang} onSignal={setHealthBias} />
                 <button
                   onClick={runRecommend}
                   disabled={recsLoading}
