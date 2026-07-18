@@ -16,7 +16,8 @@ import { recommendNextBook } from '../utils/nextBookRecommendation.js';
 import { LifestyleInsight } from '../components/LifestyleInsight.jsx';
 import { ReadingRhythmCard } from '../components/ReadingRhythmCard.jsx';
 import { KnowledgePathInsight } from '../components/KnowledgePathInsight.jsx';
-import { getNotificationSettings, saveNotificationSettings } from '../store.js';
+import { getNotificationSettings, saveNotificationSettings, getWikiConfig, getWikiIndex } from '../store.js';
+import { searchWikiNotes, formatWikiContext } from '../utils/wikiSearch.js';
 import { semanticSearchAll, formatLibraryContext, listIndexedBooks } from '../utils/ragSearch.js';
 import { renderStatsCard, downloadStatsCard, STATS_THEMES, fmtMinutes, monthName as monthLabelFn } from '../utils/statsCard.js';
 import { backupBookToDrive } from '../utils/driveBackup.js';
@@ -1402,6 +1403,11 @@ function DesktopReader({ lang, setScreen, openDriveSave, isPC, currentBook, apiK
         const hits = await queryBookIndex(book.id, text, { geminiKey: apiKeys?.gemini, topK: 5 });
         ragCtx = formatRagContext(hits, lang);
       } catch { /* RAG 조회 실패는 무시 — 기존 문서 컨텍스트로 계속 진행 */ }
+      try {
+        if (getWikiConfig().connected) {
+          ragCtx += formatWikiContext(searchWikiNotes(text, getWikiIndex()), lang);
+        }
+      } catch { /* 위키 검색 실패는 무시 */ }
       const systemPrompt = buildDesktopSystemPrompt(aiMode, book, bookNotes, bookHighlights, lang, !!pageImg) + ragCtx;
       const effectiveKeys = activeModel === "claude" ? { claude: apiKeys.claude } : { gemini: apiKeys.gemini };
       const response = await callAI(effectiveKeys, systemPrompt, history, text, pageImg);
@@ -3006,6 +3012,12 @@ function DesktopAI({ lang, isPC, apiKeys, currentBook, onShowSettings }) {
           ragCtx += formatLibraryContext(otherHits, titleOf, lang);
         } catch { /* 서재 전체 검색 실패는 무시 — 현재 책 컨텍스트로 계속 진행 */ }
       }
+      // cw_wiki 연동 시: 사용자가 직접 쓴 위키에서 질문 관련 노트를 찾아 컨텍스트에 추가
+      try {
+        if (getWikiConfig().connected) {
+          ragCtx += formatWikiContext(searchWikiNotes(text, getWikiIndex()), lang);
+        }
+      } catch { /* 위키 검색 실패는 무시 */ }
       const systemPrompt = buildDesktopSystemPrompt(mode, currentBook, notes, highlights, lang) + ragCtx;
       const response = await callAI(apiKeys, systemPrompt, history, text);
       setMessages(prev => [...prev, { role: "ai", content: response }]);

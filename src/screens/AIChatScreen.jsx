@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { i18n } from '../data.js';
 import { useTheme } from '../context.jsx';
 import { Icon, ScreenHeader } from '../components.jsx';
-import { getBookMeta, getBookIndex, getNotes, getAllHighlightsByBook, getAiChat, saveAiChat } from '../store.js';
+import { getBookMeta, getBookIndex, getNotes, getAllHighlightsByBook, getAiChat, saveAiChat, getWikiConfig, getWikiIndex } from '../store.js';
 import { BookCompare } from '../components/BookCompare.jsx';
 import { MonthlyRetro } from '../components/MonthlyRetro.jsx';
 import { buildMetaContext } from '../scanBook.js';
@@ -10,6 +10,7 @@ import { getPageText, getDocumentText, getPageImage } from '../pageTextCache.js'
 import { ensureBookText } from '../utils/ensureBookText.js';
 import { queryBookIndex, formatRagContext } from '../utils/ragIndex.js';
 import { semanticSearchAll, formatLibraryContext } from '../utils/ragSearch.js';
+import { searchWikiNotes, formatWikiContext } from '../utils/wikiSearch.js';
 import { showError } from '../utils/toast.js';
 
 async function callClaude(apiKey, systemPrompt, history, userMsg, pageImageBase64 = null) {
@@ -188,6 +189,12 @@ export function AIChatScreen({ lang, apiKeys, currentBook, onOpenBook, setScreen
           ragCtx += formatLibraryContext(otherHits, titleOf, lang);
         } catch { /* 서재 전체 검색 실패는 무시 — 현재 책 컨텍스트로 계속 진행 */ }
       }
+      // cw_wiki 연동 시: 사용자가 직접 쓴 위키에서 질문 관련 노트를 찾아 컨텍스트에 추가
+      try {
+        if (getWikiConfig().connected) {
+          ragCtx += formatWikiContext(searchWikiNotes(txt, getWikiIndex()), lang);
+        }
+      } catch { /* 위키 검색 실패는 무시 */ }
       const systemPrompt = buildSystemPrompt(mode, currentBook, notes, highlights, lang, !!pageImg) + ragCtx;
       let reply;
       if (apiKeys?.claude) reply = await callClaude(apiKeys.claude, systemPrompt, history, txt, pageImg);

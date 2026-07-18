@@ -100,7 +100,8 @@ export function parseNote(fileName, text) {
     aliases,
     tags,
     links: extractWikiLinks(body),
-    excerpt: buildExcerpt(body),
+    excerpt: buildExcerpt(body),          // UI 표시용 짧은 발췌
+    content: buildExcerpt(body, 1500),    // RAG 검색·컨텍스트용 본문(상한)
     wordCount: (body.trim().match(/\S+/g) || []).length,
   };
 }
