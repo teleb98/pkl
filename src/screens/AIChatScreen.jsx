@@ -4,6 +4,7 @@ import { useTheme } from '../context.jsx';
 import { Icon, ScreenHeader } from '../components.jsx';
 import { getBookMeta, getBookIndex, getNotes, getAllHighlightsByBook, getAiChat, saveAiChat } from '../store.js';
 import { BookCompare } from '../components/BookCompare.jsx';
+import { MonthlyRetro } from '../components/MonthlyRetro.jsx';
 import { buildMetaContext } from '../scanBook.js';
 import { getPageText, getDocumentText, getPageImage } from '../pageTextCache.js';
 import { ensureBookText } from '../utils/ensureBookText.js';
@@ -318,12 +319,13 @@ export function AIChatScreen({ lang, apiKeys, currentBook, onOpenBook, setScreen
         </div>
       </div>
 
-      {/* 메인 탭: 채팅 / 책 비교 */}
+      {/* 메인 탭: 채팅 / 책 비교 / 종합 회고 */}
       <div style={{ padding: '0 22px 10px', flexShrink: 0 }}>
         <div style={{ display: 'flex', gap: 4, background: T.surfaceAlt, padding: 3, borderRadius: 12, border: `1px solid ${T.border}`, marginBottom: 8 }}>
           {[
             { k: 'chat',    label: lang === 'ko' ? '💬 AI 채팅' : '💬 AI Chat' },
             { k: 'compare', label: lang === 'ko' ? '📊 책 비교' : '📊 Compare' },
+            { k: 'retro',   label: lang === 'ko' ? '📚 종합 회고' : '📚 Retro' },
           ].map(t2 => (
             <button key={t2.k} onClick={() => setTab(t2.k)} style={{ flex: 1, padding: '8px 4px', borderRadius: 9, border: 'none', cursor: 'pointer', background: tab === t2.k ? T.surface : 'transparent', color: tab === t2.k ? T.ink : T.inkLight, fontSize: 12, fontWeight: tab === t2.k ? 600 : 400, fontFamily: F.body, transition: 'all .15s' }}>{t2.label}</button>
           ))}
@@ -377,6 +379,13 @@ export function AIChatScreen({ lang, apiKeys, currentBook, onOpenBook, setScreen
               throw new Error('no-key');
             }}
           />
+        </div>
+      )}
+
+      {/* 종합 회고 탭 — 최근 읽은 여러 책을 가로질러 AI가 분석 */}
+      {tab === 'retro' && (
+        <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+          <MonthlyRetro lang={lang} apiKeys={apiKeys} />
         </div>
       )}
 

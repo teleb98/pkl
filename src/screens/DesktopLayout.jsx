@@ -26,6 +26,7 @@ import { KnowledgeScreen } from './KnowledgeScreen.jsx';
 import { RangeSelector } from '../components/RangeSelector.jsx';
 import { QuizModal } from '../components/QuizModal.jsx';
 import { BookCompare } from '../components/BookCompare.jsx';
+import { MonthlyRetro } from '../components/MonthlyRetro.jsx';
 import { ShareModal } from '../components/ShareModal.jsx';
 import { getLocalBooks, addLocalBook, addLocalBooksNative, removeLocalBook, localBookToBook, usesNativePicker, onElectronMenuOpenPdf } from '../utils/localBooks.js';
 import { getDriveBooks, driveBookToBook, removeDriveBook } from '../utils/driveBooks.js';
@@ -3003,11 +3004,12 @@ function DesktopAI({ lang, isPC, apiKeys, currentBook, onShowSettings }) {
           </button>
         }
       />
-      {/* 탭: 채팅 / 책 비교 */}
+      {/* 탭: 채팅 / 책 비교 / 종합 회고 */}
       <div style={{ padding: "8px 28px 0", borderBottom: `1px solid ${T.border}`, display: "flex", gap: 4, background: T.surfaceAlt, flexShrink: 0 }}>
         {[
           { k: "chat",    label: lang === "ko" ? "💬 AI 채팅" : "💬 AI Chat" },
           { k: "compare", label: lang === "ko" ? "📊 책 비교" : "📊 Compare" },
+          { k: "retro",   label: lang === "ko" ? "📚 종합 회고" : "📚 Retro" },
         ].map(tb => (
           <button key={tb.k} onClick={() => setTab(tb.k)} style={{
             padding: "9px 16px", border: "none", background: "transparent", cursor: "pointer",
@@ -3028,6 +3030,13 @@ function DesktopAI({ lang, isPC, apiKeys, currentBook, onShowSettings }) {
             currentBook={currentBook}
             callAI={async (sys, history, msg) => callAI(apiKeys, sys, history, msg)}
           />
+        </div>
+      )}
+
+      {/* 종합 회고 탭 — 최근 읽은 여러 책을 가로질러 AI가 분석 */}
+      {tab === "retro" && (
+        <div style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column" }}>
+          <MonthlyRetro lang={lang} apiKeys={apiKeys} />
         </div>
       )}
 
