@@ -16,6 +16,7 @@ import { scheduleProgressAutoSync } from '../utils/autoProgressSync.js';
 import { renderStatsCard, downloadStatsCard, STATS_THEMES, fmtMinutes, monthName as monthLabel } from '../utils/statsCard.js';
 import { getWeeklyCoachData, generateCoachPrompt } from '../utils/readingCoach.js';
 import { generateReadingStrategy } from '../utils/readingStrategy.js';
+import { recommendNextBook } from '../utils/nextBookRecommendation.js';
 import { callAI } from '../aiClient.js';
 
 function pad(n) { return String(n).padStart(2, '0'); }
@@ -140,6 +141,31 @@ export function GoalsScreen({ lang, currentBook, onOpenBook, apiKeys }) {
     toggleStrategyMilestone(currentBook.id, index);
     setStrategy(getReadingStrategy(currentBook.id));
     setStrategyProgress(getStrategyProgress(currentBook.id));
+  };
+
+  // 다음 읽을 책 추천 — 책이 열려있지 않을 때(전략 탭 빈 상태)
+  const [recs, setRecs] = useState(null);
+  const [recsLoading, setRecsLoading] = useState(false);
+  const [recsError, setRecsError] = useState('');
+  const runRecommend = async () => {
+    if (recsLoading) return;
+    if (!apiKeys?.claude && !apiKeys?.gemini) {
+      setRecsError(lang === 'ko' ? 'AI 키를 설정해주세요' : 'Set an API key first');
+      return;
+    }
+    setRecsLoading(true);
+    setRecsError('');
+    try {
+      setRecs(await recommendNextBook({ lang, apiKeys }));
+    } catch (e) {
+      setRecsError(
+        e.message === 'no-candidates'
+          ? (lang === 'ko' ? '추천할 만한 안 읽은 책이 서재에 없어요.' : "No unread books in your library to recommend.")
+          : (lang === 'ko' ? `추천 실패: ${e.message}` : `Failed: ${e.message}`)
+      );
+    } finally {
+      setRecsLoading(false);
+    }
   };
 
   // 4-4: 통계 카드
@@ -843,12 +869,47 @@ export function GoalsScreen({ lang, currentBook, onOpenBook, apiKeys }) {
       {goalsTab === 'strategy' && (
         <div style={{ padding: '0 22px 32px' }}>
           {!currentBook ? (
-            <div style={{ padding: '40px 4px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14, textAlign: 'center' }}>
+            <div style={{ padding: '32px 4px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14, textAlign: 'center' }}>
               <div style={{ width: 64, height: 64, borderRadius: 18, background: T.accentSoft, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 <Icon name="goals" size={28} color={T.accent} />
               </div>
-              <div style={{ fontSize: 13, color: T.inkLight, fontFamily: F.body, lineHeight: 1.65, maxWidth: 260 }}>
+              <div style={{ fontSize: 13, color: T.inkLight, fontFamily: F.body, lineHeight: 1.65, maxWidth: 280 }}>
                 {lang === 'ko' ? '서재에서 책을 열면 그 책의 독서 전략을 세울 수 있어요.' : 'Open a book from your library to build a reading strategy for it.'}
+              </div>
+
+              {/* 다음 읽을 책 추천 */}
+              <div style={{ width: '100%', maxWidth: 340, marginTop: 10, paddingTop: 20, borderTop: `1px solid ${T.border}` }}>
+                <button
+                  onClick={runRecommend}
+                  disabled={recsLoading}
+                  style={{ width: '100%', padding: '11px 0', borderRadius: 12, border: 'none', background: recsLoading ? T.border : T.accent, color: '#FFF', fontSize: 13, fontWeight: 700, fontFamily: F.body, cursor: recsLoading ? 'default' : 'pointer' }}
+                >
+                  {recsLoading
+                    ? (lang === 'ko' ? '추천 찾는 중…' : 'Finding recommendations…')
+                    : (lang === 'ko' ? '📖 다음 읽을 책 추천받기' : '📖 Recommend my next book')}
+                </button>
+
+                {recsError && (
+                  <div style={{ fontSize: 12, color: '#C0392B', fontFamily: F.body, marginTop: 10, lineHeight: 1.55 }}>⚠️ {recsError}</div>
+                )}
+
+                {recs && (
+                  <div style={{ marginTop: 14, display: 'flex', flexDirection: 'column', gap: 8, textAlign: 'left' }}>
+                    {recs.map(({ book, reason }) => (
+                      <div key={book.id} style={{ background: T.surface, borderRadius: 12, padding: 13, border: `1px solid ${T.border}` }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginBottom: 5 }}>
+                          <div style={{ fontSize: 13.5, fontWeight: 600, color: T.ink, fontFamily: 'serif', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{book.title}</div>
+                          {onOpenBook && (
+                            <button onClick={() => onOpenBook(book)} style={{ padding: '5px 11px', borderRadius: 8, border: 'none', background: T.accent, color: '#FFF', fontSize: 11.5, fontFamily: F.body, fontWeight: 600, cursor: 'pointer', flexShrink: 0 }}>
+                              {lang === 'ko' ? '열기' : 'Open'}
+                            </button>
+                          )}
+                        </div>
+                        <div style={{ fontSize: 12, color: T.inkMid, fontFamily: F.body, lineHeight: 1.55 }}>{reason}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
           ) : (

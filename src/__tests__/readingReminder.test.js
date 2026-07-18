@@ -5,8 +5,8 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
    shouldFireReminder: 순수 판정 로직. checkAndFireReminder: 실제 발행+dedupe.
    ─────────────────────────────────────────────────────────────── */
 
-import { saveNotificationSettings } from '../store.js';
-import { shouldFireReminder, checkAndFireReminder, getLastFiredDate } from '../utils/readingReminder.js';
+import { saveNotificationSettings, saveReadingStrategy } from '../store.js';
+import { shouldFireReminder, checkAndFireReminder, getLastFiredDate, buildReminderBody } from '../utils/readingReminder.js';
 
 function at(dateStr, hhmm) {
   return new Date(`${dateStr}T${hhmm}:00`);
@@ -90,5 +90,42 @@ describe('checkAndFireReminder — 실제 발행 + dedupe', () => {
     saveNotificationSettings({ enabled: true, time: '21:00' });
     expect(() => checkAndFireReminder(at('2026-07-12', '21:05'))).not.toThrow();
     expect(getLastFiredDate()).toBe('2026-07-12');
+  });
+
+  it('book 을 넘기고 그 책에 전략이 있으면 일일 목표를 본문에 반영', () => {
+    globalThis.Notification = vi.fn();
+    globalThis.Notification.permission = 'granted';
+    saveNotificationSettings({ enabled: true, time: '21:00' });
+    saveReadingStrategy('b1', { dailyPageTarget: 25, estimatedDays: 10 });
+
+    checkAndFireReminder(at('2026-07-12', '21:05'), { id: 'b1', title: '테스트 책' });
+    const body = globalThis.Notification.mock.calls[0][1].body;
+    expect(body).toContain('테스트 책');
+    expect(body).toContain('25p');
+  });
+
+  it('book 이 없거나 전략이 없으면 기존 일반 문구를 쓴다(하위 호환)', () => {
+    globalThis.Notification = vi.fn();
+    globalThis.Notification.permission = 'granted';
+    saveNotificationSettings({ enabled: true, time: '21:00' });
+
+    checkAndFireReminder(at('2026-07-12', '21:05'));
+    expect(globalThis.Notification.mock.calls[0][1].body).toBe('오늘의 독서 시간을 가져보세요 📖');
+  });
+});
+
+describe('buildReminderBody', () => {
+  it('책이 없으면 일반 문구', () => {
+    expect(buildReminderBody(null)).toBe('오늘의 독서 시간을 가져보세요 📖');
+  });
+
+  it('책은 있지만 전략이 없으면 일반 문구', () => {
+    expect(buildReminderBody({ id: 'no-strategy', title: '책' })).toBe('오늘의 독서 시간을 가져보세요 📖');
+  });
+
+  it('전략이 있으면 책 제목과 일일 목표를 포함', () => {
+    saveReadingStrategy('b2', { dailyPageTarget: 40, estimatedDays: 5 });
+    const body = buildReminderBody({ id: 'b2', title: '전략 책' });
+    expect(body).toBe('《전략 책》 오늘 목표 40p — 지금 읽어보세요 📖');
   });
 });
