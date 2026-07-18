@@ -20,6 +20,7 @@ import { KnowledgeGapCard } from '../components/KnowledgeGapCard.jsx';
 import { KnowledgeBridgeCard } from '../components/KnowledgeBridgeCard.jsx';
 import { KnowledgeEvolutionCard } from '../components/KnowledgeEvolutionCard.jsx';
 import { DeepDiveCard } from '../components/DeepDiveCard.jsx';
+import { RecallCard } from '../components/RecallCard.jsx';
 
 function fmtDate(iso) {
   if (!iso) return '';
@@ -405,6 +406,7 @@ export function KnowledgeScreen({ lang, apiKeys, currentBook }) {
         <KnowledgeBridgeCard lang={lang} />
         <KnowledgeEvolutionCard lang={lang} apiKeys={apiKeys} />
         <DeepDiveCard lang={lang} apiKeys={apiKeys} />
+        <RecallCard lang={lang} apiKeys={apiKeys} />
         <RelatedWikiNotes book={currentBook} lang={lang} />
       </div>
 

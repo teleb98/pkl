@@ -719,3 +719,25 @@ export function getWikiIndex() {
 export function saveWikiIndex(notes) {
   localStorage.setItem(WIKI_INDEX_KEY, JSON.stringify(notes || []));
 }
+
+/* ── 지식 정착 복습(능동 회상) 기록 — noteId 별 마지막 복습·시도·실패 횟수 ── */
+const RECALL_LOG_KEY = 'pkl_recall_log';
+
+/** { [noteId]: { lastReviewAt, attempts, fails } } */
+export function getRecallLog() {
+  try { return JSON.parse(localStorage.getItem(RECALL_LOG_KEY) || '{}') || {}; }
+  catch { return {}; }
+}
+
+/** 회상 결과 기록 — ok=true 기억함 / false 못 함 */
+export function recordRecall(noteId, ok) {
+  const log = getRecallLog();
+  const cur = log[noteId] || { attempts: 0, fails: 0 };
+  log[noteId] = {
+    lastReviewAt: Date.now(),
+    attempts: cur.attempts + 1,
+    fails: cur.fails + (ok ? 0 : 1),
+  };
+  localStorage.setItem(RECALL_LOG_KEY, JSON.stringify(log));
+  return log[noteId];
+}
