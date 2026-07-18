@@ -4,7 +4,8 @@ import { useGoogleAuth } from '../utils/useGoogleAuth.js';
 import { syncWikiIndex, DEFAULT_VAULT_PATH } from '../utils/driveWiki.js';
 import { buildWikiVectors } from '../utils/wikiVector.js';
 import { exportKnowledgeToVault, WRITE_SCOPE } from '../utils/wikiExport.js';
-import { getWikiConfig, saveWikiConfig, saveWikiIndex } from '../store.js';
+import { GEMINI_EMBED_MODEL } from '../utils/embeddings.js';
+import { getWikiConfig, saveWikiConfig, saveWikiIndex, getWikiIndex } from '../store.js';
 
 /* ── 옵시디언 위키(cw_wiki) 연결 패널
    - 가져오기(읽기 전용): Drive의 Backups/cw_wiki 를 읽어 위키 인덱스 생성 + 시맨틱
@@ -24,11 +25,12 @@ export function WikiConnectPanel({ lang, apiKeys }) {
     try {
       const res = await syncWikiIndex(token, { segments: DEFAULT_VAULT_PATH });
       saveWikiIndex(res.notes);
-      try { await buildWikiVectors(res.notes, { geminiKey: apiKeys?.gemini }); }
+      let vectorModel = null;
+      try { vectorModel = (await buildWikiVectors(res.notes, { geminiKey: apiKeys?.gemini })).model; }
       catch { /* 벡터 색인 실패 시에도 토큰 검색으로 동작 */ }
       setCfg(saveWikiConfig({
         connected: true, folderPath: DEFAULT_VAULT_PATH,
-        lastSync: Date.now(), count: res.count, truncated: res.truncated,
+        lastSync: Date.now(), count: res.count, truncated: res.truncated, vectorModel,
       }));
       setStatus('idle');
     } catch (e) {
@@ -56,6 +58,18 @@ export function WikiConnectPanel({ lang, apiKeys }) {
       setError(e?.code === 'folder-not-found'
         ? (ko ? 'Backups/cw_wiki 폴더를 찾지 못했어요' : 'Backups/cw_wiki not found')
         : (ko ? '내보내기에 실패했어요' : 'Export failed'));
+    }
+  }
+
+  async function upgradeEmbeddings() {
+    if (!apiKeys?.gemini) return;
+    setStatus('syncing'); setError(''); setExportMsg('');
+    try {
+      const model = (await buildWikiVectors(getWikiIndex(), { geminiKey: apiKeys.gemini })).model;
+      setCfg(saveWikiConfig({ vectorModel: model }));
+      setStatus('idle');
+    } catch {
+      setStatus('error'); setError(ko ? '임베딩 업그레이드에 실패했어요' : 'Embedding upgrade failed');
     }
   }
 
@@ -108,6 +122,17 @@ export function WikiConnectPanel({ lang, apiKeys }) {
               ? <>📚 {ko ? `노트 ${cfg.count}개 연결됨` : `${cfg.count} notes linked`}{cfg.truncated ? (ko ? ' (일부)' : ' (partial)') : ''}{lastSync ? ` · ${lastSync}` : ''}</>
               : (ko ? 'Drive의 Backups/cw_wiki 를 읽어 책의 주제·AI 대화와 위키를 이어줍니다. (가져오기는 읽기 전용)' : 'Reads Backups/cw_wiki from Drive to link your wiki with book topics and AI chat. (import is read-only)')}
       </div>
+
+      {cfg.connected && cfg.vectorModel && status !== 'error' && (
+        <div style={{ marginTop: 7, display: 'flex', alignItems: 'center', gap: 8, fontSize: 10.5, color: T.inkLight, fontFamily: F.body }}>
+          <span>{ko ? '의미 검색' : 'Semantic'}: <b style={{ color: cfg.vectorModel === GEMINI_EMBED_MODEL ? T.accent : T.inkMid }}>{cfg.vectorModel === GEMINI_EMBED_MODEL ? 'Gemini' : (ko ? '로컬' : 'Local')}</b></span>
+          {cfg.vectorModel !== GEMINI_EMBED_MODEL && apiKeys?.gemini && (
+            <button onClick={upgradeEmbeddings} disabled={busy} style={{ fontSize: 10.5, fontWeight: 700, color: T.accent, background: 'transparent', border: `1px solid ${T.accent}55`, borderRadius: 7, padding: '3px 9px', cursor: busy ? 'default' : 'pointer', fontFamily: F.body }}>
+              {ko ? 'Gemini로 향상' : 'Upgrade to Gemini'}
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }

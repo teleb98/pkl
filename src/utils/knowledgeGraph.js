@@ -24,14 +24,18 @@ export function noteCoversTopic(note, topicNorm) {
  */
 export function buildKnowledgeGraph(books, wikiNotes) {
   const topics = new Map();
+  const ensure = (raw) => {
+    const key = norm(raw);
+    if (!key) return null;
+    if (!topics.has(key)) topics.set(key, { topic: raw, books: new Set(), notes: new Set() });
+    return key;
+  };
   for (const b of books || []) {
-    for (const raw of b.aiTopics || []) {
-      const key = norm(raw);
-      if (!key) continue;
-      if (!topics.has(key)) topics.set(key, { topic: raw, books: new Set(), notes: new Set() });
-      topics.get(key).books.add(b.id);
-    }
+    for (const raw of b.aiTopics || []) { const key = ensure(raw); if (key) topics.get(key).books.add(b.id); }
   }
+  // 노트 태그도 주제 노드로 — 책엔 없지만 사용자가 위키에서 다룬 주제 포함
+  for (const n of wikiNotes || []) for (const tag of n.tags || []) ensure(tag);
+  // 모든 주제에 대해 그 주제를 다루는 노트를 연결
   for (const [key, entry] of topics) {
     for (const n of wikiNotes || []) {
       if (noteCoversTopic(n, key)) entry.notes.add(n.id);
@@ -52,4 +56,18 @@ export function findGaps(graph, { minBooks = 2 } = {}) {
     }
   }
   return out.sort((a, b) => b.bookCount - a.bookCount);
+}
+
+/**
+ * 생각이 쌓인 주제 — 위키 노트가 minNotes 이상인 주제(관점의 진화를 볼 만한 재료).
+ * @returns {Array<{topic, key, noteIds:string[], noteCount:number, bookIds:string[]}>} 노트 수 내림차순
+ */
+export function findEvolvingTopics(graph, { minNotes = 2 } = {}) {
+  const out = [];
+  for (const [key, e] of graph.topics) {
+    if (e.notes.size >= minNotes) {
+      out.push({ topic: e.topic, key, noteIds: [...e.notes], noteCount: e.notes.size, bookIds: [...e.books] });
+    }
+  }
+  return out.sort((a, b) => b.noteCount - a.noteCount);
 }

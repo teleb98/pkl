@@ -12,7 +12,7 @@ vi.mock('../utils/driveWiki.js', async (orig) => ({
   ...(await orig()),
   syncWikiIndex: vi.fn(),
 }));
-vi.mock('../utils/wikiVector.js', () => ({ buildWikiVectors: vi.fn(async () => ({ count: 2 })) }));
+vi.mock('../utils/wikiVector.js', () => ({ buildWikiVectors: vi.fn(async () => ({ count: 2, model: 'gemini-text-embedding-004' })) }));
 vi.mock('../utils/wikiExport.js', async (orig) => ({
   ...(await orig()),
   exportKnowledgeToVault: vi.fn(),
@@ -41,6 +41,21 @@ describe('WikiConnectPanel — 연결·동기화 플로우', () => {
     expect(getWikiIndex().length).toBe(2);
     expect(buildWikiVectors).toHaveBeenCalledWith(expect.any(Array), { geminiKey: 'g-key' });
     expect(screen.getByText('볼트로 내보내기')).toBeInTheDocument(); // 연결 후 내보내기 노출
+    expect(getWikiConfig().vectorModel).toBe('gemini-text-embedding-004');
+    expect(screen.getByText('Gemini')).toBeInTheDocument(); // 의미 검색 모델 배지
+  });
+
+  it('로컬 임베딩 상태에서 Gemini 키가 있으면 업그레이드 버튼 → 재색인', async () => {
+    syncWikiIndex.mockResolvedValue({ folderId: 'w1', count: 1, truncated: false, notes: [{ id: 'n1' }] });
+    buildWikiVectors.mockResolvedValueOnce({ count: 1, model: 'local-hash-256' });   // 최초: 로컬
+    renderWithTheme(<WikiConnectPanel lang="ko" apiKeys={{ gemini: 'g-key' }} />);
+    fireEvent.click(screen.getByText('드라이브로 연결'));
+    await screen.findByText(/노트 1개 연결됨/);
+
+    buildWikiVectors.mockResolvedValueOnce({ count: 1, model: 'gemini-text-embedding-004' }); // 업그레이드
+    fireEvent.click(await screen.findByText('Gemini로 향상'));
+    await waitFor(() => expect(getWikiConfig().vectorModel).toBe('gemini-text-embedding-004'));
+    expect(buildWikiVectors).toHaveBeenCalledTimes(2);
   });
 
   it('폴더가 없으면 에러 안내를 보여준다', async () => {
