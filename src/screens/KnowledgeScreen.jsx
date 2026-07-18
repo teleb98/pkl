@@ -396,7 +396,7 @@ export function KnowledgeScreen({ lang, apiKeys, currentBook }) {
 
       {/* cw_wiki(옵시디언 볼트) 연결 + 현재 책과 연결된 위키 노트 */}
       <div style={{ padding: '0 22px' }}>
-        <WikiConnectPanel lang={lang} />
+        <WikiConnectPanel lang={lang} apiKeys={apiKeys} />
         <RelatedWikiNotes book={currentBook} lang={lang} />
       </div>
 

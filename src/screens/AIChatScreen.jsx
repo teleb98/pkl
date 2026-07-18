@@ -10,7 +10,8 @@ import { getPageText, getDocumentText, getPageImage } from '../pageTextCache.js'
 import { ensureBookText } from '../utils/ensureBookText.js';
 import { queryBookIndex, formatRagContext } from '../utils/ragIndex.js';
 import { semanticSearchAll, formatLibraryContext } from '../utils/ragSearch.js';
-import { searchWikiNotes, formatWikiContext } from '../utils/wikiSearch.js';
+import { formatWikiContext } from '../utils/wikiSearch.js';
+import { searchWiki } from '../utils/wikiVector.js';
 import { showError } from '../utils/toast.js';
 
 async function callClaude(apiKey, systemPrompt, history, userMsg, pageImageBase64 = null) {
@@ -190,9 +191,10 @@ export function AIChatScreen({ lang, apiKeys, currentBook, onOpenBook, setScreen
         } catch { /* 서재 전체 검색 실패는 무시 — 현재 책 컨텍스트로 계속 진행 */ }
       }
       // cw_wiki 연동 시: 사용자가 직접 쓴 위키에서 질문 관련 노트를 찾아 컨텍스트에 추가
+      // (시맨틱 검색 우선, 벡터 없으면 토큰 검색 폴백)
       try {
         if (getWikiConfig().connected) {
-          ragCtx += formatWikiContext(searchWikiNotes(txt, getWikiIndex()), lang);
+          ragCtx += formatWikiContext(await searchWiki(txt, getWikiIndex(), { geminiKey: apiKeys?.gemini }), lang);
         }
       } catch { /* 위키 검색 실패는 무시 */ }
       const systemPrompt = buildSystemPrompt(mode, currentBook, notes, highlights, lang, !!pageImg) + ragCtx;

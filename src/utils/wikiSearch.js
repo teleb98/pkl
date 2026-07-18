@@ -11,7 +11,7 @@ function matchToks(noteToks, q) {
 }
 
 /** matched 토큰이 처음 등장하는 지점 주변을 잘라 스니펫을 만든다(없으면 발췌 앞부분) */
-function buildSnippet(note, matched) {
+export function buildSnippet(note, matched) {
   const text = note.content || note.excerpt || '';
   const low = text.toLowerCase();
   let at = -1;
