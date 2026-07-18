@@ -92,7 +92,7 @@ export function selectExportBooks() {
 }
 
 /** rarebook_id 로 기존 노트 찾기(펜스 병합용) — 폴더 내 md 나열 후 본문 조회 */
-async function findExistingNote(token, folderId, book, fileName) {
+async function findExistingNote(token, folderId, rarebookId, fileName) {
   const q = `'${folderId}' in parents and trashed=false`;
   const url = `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id,name)&pageSize=200`;
   const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
@@ -107,7 +107,7 @@ async function findExistingNote(token, folderId, book, fileName) {
   for (const f of files) {
     if (!f.name?.toLowerCase().endsWith('.md')) continue;
     const text = await fetchFileText(token, f.id).catch(() => '');
-    if (text.includes(`rarebook_id: ${book.id}`)) return { id: f.id, name: f.name, text };
+    if (text.includes(`rarebook_id: ${rarebookId}`)) return { id: f.id, name: f.name, text };
   }
   return null;
 }
@@ -133,7 +133,7 @@ export async function exportKnowledgeToVault(token, { segments = DEFAULT_VAULT_P
       review: getBookReview(book.id),
     };
     const fileName = sanitizeFileName(book.title);
-    const existing = await findExistingNote(token, folderId, book, fileName);
+    const existing = await findExistingNote(token, folderId, book.id, fileName);
     const content = existing
       ? mergeManagedBlock(existing.text, buildManagedBlock(data))
       : buildBookNote(book, data);
@@ -141,4 +141,45 @@ export async function exportKnowledgeToVault(token, { segments = DEFAULT_VAULT_P
     if (existing) updated += 1; else created += 1;
   }
   return { created, updated, total: books.length };
+}
+
+/* ── 지식 공백 노트(AI 초안) 내보내기 ── */
+
+/** 공백 주제의 개념 노트 전체(신규 생성용). draftBody 는 관리 펜스 안에 들어간다. */
+export function buildGapNote({ topic, title, draftBody, sources = [] }) {
+  const t = title || topic;
+  const fm = [
+    '---',
+    `rarebook_id: topic:${topic}`,
+    `title: ${t}`,
+    `topics: [${topic}]`,
+    'source: rarebook 서재 (지식 공백)',
+    '---',
+  ].join('\n');
+  const cite = sources.length ? sources.map(s => `《${s}》`).join('') : '읽은 책들';
+  const head = `# ${t}\n\n> [!info] 서재가 ${cite}의 하이라이트에서 합성한 초안입니다. 자유롭게 다듬어 당신의 노트로 만드세요.\n\n**주제** [[${topic}]]`;
+  const tail = [
+    '', FENCE_START, draftBody || '(초안 없음)', FENCE_END, '',
+    '## 나의 생각', '',
+    '<!-- 이 아래는 옵시디언에서 자유롭게 — 재생성해도 보존됩니다 -->', '',
+  ].join('\n');
+  return `${fm}\n\n${head}\n${tail}`;
+}
+
+/**
+ * 지식 공백 개념 노트 하나를 볼트의 rarebook/ 폴더에 쓴다(멱등·펜스 병합).
+ * @returns {Promise<{created:boolean, updated:boolean, fileName:string}>}
+ */
+export async function exportGapNote(token, { topic, title, draftBody, sources = [], segments = DEFAULT_VAULT_PATH } = {}) {
+  if (!token) throw new Error('no-token');
+  if (!topic) throw new Error('no-topic');
+  const vaultId = await resolveFolderByPath(token, segments);
+  const folderId = await findOrCreateFolder(token, EXPORT_SUBFOLDER, vaultId);
+  const fileName = sanitizeFileName(title || topic);
+  const existing = await findExistingNote(token, folderId, `topic:${topic}`, fileName);
+  const content = existing
+    ? mergeManagedBlock(existing.text, draftBody || '(초안 없음)')
+    : buildGapNote({ topic, title, draftBody, sources });
+  await uploadFileToDrive(token, folderId, existing?.name || fileName, content);
+  return { created: !existing, updated: !!existing, fileName: existing?.name || fileName };
 }

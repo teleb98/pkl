@@ -8,7 +8,7 @@ import { syncWikiIndex } from '../utils/driveWiki.js';
 import { findRelatedWikiNotes } from '../utils/wikiMatch.js';
 import { buildWikiVectors, searchWiki } from '../utils/wikiVector.js';
 import { formatWikiContext } from '../utils/wikiSearch.js';
-import { exportKnowledgeToVault, FENCE_START, FENCE_END } from '../utils/wikiExport.js';
+import { exportKnowledgeToVault, exportGapNote, FENCE_START, FENCE_END } from '../utils/wikiExport.js';
 import { deleteBookVectors } from '../utils/bookVectorDb.js';
 import { saveBookIndex, setBookMeta, addNote, addHighlight } from '../store.js';
 
@@ -173,6 +173,27 @@ describe('시나리오 D — 내보내기 왕복: 사용자 편집·파일명 �
     expect(updated.content).toContain('이 책은 인생책이다');       // 펜스 밖 보존
     expect(updated.content.match(new RegExp(FENCE_START.slice(0, 20), 'g')).length).toBe(1); // 펜스 중복 없음
     expect([...drive.files.values()].filter(f => f.name.endsWith('.md') && (f.parents || []).includes(rarebookFolder.id)).length).toBe(1); // 파일 중복 생성 없음
+  });
+
+  it('지식 공백 노트: 생성 → 재생성 시 rarebook_id(topic:)로 매칭·펜스 갱신', async () => {
+    const drive = createMockDrive(vaultFixture());
+    globalThis.fetch = drive.fetchImpl;
+
+    let res = await exportGapNote('tok', { topic: '역사', draftBody: '첫 초안', sources: ['사피엔스'] });
+    expect(res.created).toBe(true);
+    const note = [...drive.files.values()].find(f => f.name === '역사.md');
+    expect(note.content).toContain('rarebook_id: topic:역사');
+    expect(note.content).toContain('[[역사]]');
+    expect(note.content).toContain('첫 초안');
+
+    // 사용자가 펜스 밖에 글 추가
+    note.content += '\n내가 덧붙인 생각.';
+    res = await exportGapNote('tok', { topic: '역사', draftBody: '재합성된 초안' });
+    expect(res.updated).toBe(true);
+    const updated = drive.files.get(note.id);
+    expect(updated.content).toContain('재합성된 초안');
+    expect(updated.content).not.toContain('첫 초안');
+    expect(updated.content).toContain('내가 덧붙인 생각');   // 펜스 밖 보존
   });
 
   it('펜스를 통째로 지운 노트에는 펜스를 끝에 재부착한다', async () => {
