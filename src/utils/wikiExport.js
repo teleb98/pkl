@@ -183,3 +183,43 @@ export async function exportGapNote(token, { topic, title, draftBody, sources = 
   await uploadFileToDrive(token, folderId, existing?.name || fileName, content);
   return { created: !existing, updated: !!existing, fileName: existing?.name || fileName };
 }
+
+/* ── MOC(Map of Content) 노트 내보내기 ── */
+
+/** MOC 허브 노트 전체(신규 생성용). draftBody(구조 개요)는 관리 펜스 안에. */
+export function buildMocNote({ topic, draftBody }) {
+  const fm = [
+    '---',
+    `rarebook_id: moc:${topic}`,
+    `title: ${topic} MOC`,
+    `topics: [${topic}]`,
+    'type: moc',
+    'source: rarebook 서재 (MOC 초안)',
+    '---',
+  ].join('\n');
+  const head = `# ${topic} MOC\n\n> [!map] 서재가 "${topic}" 노트들을 구조로 엮은 지도 초안입니다. 다듬어 당신의 MOC로 만드세요.\n\n**주제** [[${topic}]]`;
+  const tail = [
+    '', FENCE_START, draftBody || '(초안 없음)', FENCE_END, '',
+    '## 나의 구조', '',
+    '<!-- 이 아래는 옵시디언에서 자유롭게 — 재생성해도 보존됩니다 -->', '',
+  ].join('\n');
+  return `${fm}\n\n${head}\n${tail}`;
+}
+
+/**
+ * MOC 노트 하나를 볼트의 rarebook/ 폴더에 쓴다(멱등·펜스 병합).
+ * @returns {Promise<{created:boolean, updated:boolean, fileName:string}>}
+ */
+export async function exportMocNote(token, { topic, draftBody, segments = DEFAULT_VAULT_PATH } = {}) {
+  if (!token) throw new Error('no-token');
+  if (!topic) throw new Error('no-topic');
+  const vaultId = await resolveFolderByPath(token, segments);
+  const folderId = await findOrCreateFolder(token, EXPORT_SUBFOLDER, vaultId);
+  const fileName = sanitizeFileName(`${topic} MOC`);
+  const existing = await findExistingNote(token, folderId, `moc:${topic}`, fileName);
+  const content = existing
+    ? mergeManagedBlock(existing.text, draftBody || '(초안 없음)')
+    : buildMocNote({ topic, draftBody });
+  await uploadFileToDrive(token, folderId, existing?.name || fileName, content);
+  return { created: !existing, updated: !!existing, fileName: existing?.name || fileName };
+}

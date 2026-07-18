@@ -21,6 +21,8 @@ import { KnowledgeBridgeCard } from '../components/KnowledgeBridgeCard.jsx';
 import { KnowledgeEvolutionCard } from '../components/KnowledgeEvolutionCard.jsx';
 import { DeepDiveCard } from '../components/DeepDiveCard.jsx';
 import { RecallCard } from '../components/RecallCard.jsx';
+import { MocCard } from '../components/MocCard.jsx';
+import { WeeklyReviewCard } from '../components/WeeklyReviewCard.jsx';
 
 function fmtDate(iso) {
   if (!iso) return '';
@@ -402,11 +404,13 @@ export function KnowledgeScreen({ lang, apiKeys, currentBook }) {
       {/* cw_wiki(옵시디언 볼트) 연결 + 현재 책과 연결된 위키 노트 */}
       <div style={{ padding: '0 22px' }}>
         <WikiConnectPanel lang={lang} apiKeys={apiKeys} />
+        <WeeklyReviewCard lang={lang} />
         <KnowledgeGapCard lang={lang} apiKeys={apiKeys} />
         <KnowledgeBridgeCard lang={lang} />
         <KnowledgeEvolutionCard lang={lang} apiKeys={apiKeys} />
         <DeepDiveCard lang={lang} apiKeys={apiKeys} />
         <RecallCard lang={lang} apiKeys={apiKeys} />
+        <MocCard lang={lang} apiKeys={apiKeys} />
         <RelatedWikiNotes book={currentBook} lang={lang} />
       </div>
 
