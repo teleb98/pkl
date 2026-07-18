@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { screen, fireEvent, waitFor } from '@testing-library/react';
 import { renderWithTheme } from './testUtils.jsx';
+import { GoogleOAuthProvider } from '@react-oauth/google';
 import { ThemeContext } from '../context.jsx';
 import { THEMES, TYPE_PAIRS } from '../data.js';
 
@@ -79,9 +80,11 @@ describe('GoalsScreen — 독서 전략 탭', () => {
     await screen.findByText(/난이도.*보통/);
 
     rerender(
-      <ThemeContext.Provider value={{ T: THEMES.ember, F: TYPE_PAIRS.lora }}>
-        <GoalsScreen lang="ko" currentBook={{ id: 'b2', title: '다른 책' }} apiKeys={{ gemini: 'k' }} />
-      </ThemeContext.Provider>
+      <GoogleOAuthProvider clientId="test-client-id">
+        <ThemeContext.Provider value={{ T: THEMES.ember, F: TYPE_PAIRS.lora }}>
+          <GoalsScreen lang="ko" currentBook={{ id: 'b2', title: '다른 책' }} apiKeys={{ gemini: 'k' }} />
+        </ThemeContext.Provider>
+      </GoogleOAuthProvider>
     );
     expect(screen.queryByText(/난이도.*보통/)).not.toBeInTheDocument();
     expect(screen.getByText('📋 AI 독서 전략 생성')).toBeInTheDocument();

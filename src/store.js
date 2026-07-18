@@ -695,3 +695,27 @@ export function getAllPdfAnnotations() {
 export function getAllHighlightsMerged() {
   return [...getHighlights(), ...getAllPdfAnnotations().map(annotationToHighlight)];
 }
+
+/* ── cw_wiki(옵시디언 볼트) 연동 — 설정 + 파싱된 위키 인덱스 로컬 캐시 ── */
+const WIKI_CONFIG_KEY = 'pkl_wiki_config';
+const WIKI_INDEX_KEY = 'pkl_wiki_index';
+
+/** { connected, folderPath:[], lastSync, count, truncated } */
+export function getWikiConfig() {
+  try { return JSON.parse(localStorage.getItem(WIKI_CONFIG_KEY) || 'null') || { connected: false }; }
+  catch { return { connected: false }; }
+}
+export function saveWikiConfig(patch) {
+  const next = { ...getWikiConfig(), ...patch };
+  localStorage.setItem(WIKI_CONFIG_KEY, JSON.stringify(next));
+  return next;
+}
+
+/** 파싱된 위키 노트 배열(오프라인 교차연결용 캐시) */
+export function getWikiIndex() {
+  try { return JSON.parse(localStorage.getItem(WIKI_INDEX_KEY) || '[]') || []; }
+  catch { return []; }
+}
+export function saveWikiIndex(notes) {
+  localStorage.setItem(WIKI_INDEX_KEY, JSON.stringify(notes || []));
+}

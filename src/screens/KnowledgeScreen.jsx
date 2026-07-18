@@ -14,6 +14,8 @@ import { listIndexedBooks, semanticSearchAll } from '../utils/ragSearch.js';
 import { printNotesAsPdf, downloadNotesAsMarkdown } from '../utils/exportNotes.js';
 import { ReviewCardModal } from '../components/ReviewCardModal.jsx';
 import { QuizModal } from '../components/QuizModal.jsx';
+import { WikiConnectPanel } from '../components/WikiConnectPanel.jsx';
+import { RelatedWikiNotes } from '../components/RelatedWikiNotes.jsx';
 
 function fmtDate(iso) {
   if (!iso) return '';
@@ -391,6 +393,12 @@ export function KnowledgeScreen({ lang, apiKeys, currentBook }) {
             : null
         }
       />
+
+      {/* cw_wiki(옵시디언 볼트) 연결 + 현재 책과 연결된 위키 노트 */}
+      <div style={{ padding: '0 22px' }}>
+        <WikiConnectPanel lang={lang} />
+        <RelatedWikiNotes book={currentBook} lang={lang} />
+      </div>
 
       {/* 메인 탭 */}
       <div style={{ padding: '0 22px 14px' }}>

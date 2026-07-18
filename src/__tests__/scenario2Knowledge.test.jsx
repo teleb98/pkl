@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, fireEvent, waitFor } from '@testing-library/react';
+import { GoogleOAuthProvider } from '@react-oauth/google';
 import { ThemeContext } from '../context.jsx';
 import { THEMES, TYPE_PAIRS } from '../data.js';
 import { KnowledgeScreen } from '../screens/KnowledgeScreen.jsx';
@@ -30,9 +31,11 @@ const API_KEYS  = { claude: 'test-key' };
 
 function renderKnowledge(props = {}) {
   return render(
-    <ThemeContext.Provider value={{ T, F }}>
-      <KnowledgeScreen lang="ko" apiKeys={API_KEYS} currentBook={MOCK_BOOK} {...props} />
-    </ThemeContext.Provider>
+    <GoogleOAuthProvider clientId="test-client-id">
+      <ThemeContext.Provider value={{ T, F }}>
+        <KnowledgeScreen lang="ko" apiKeys={API_KEYS} currentBook={MOCK_BOOK} {...props} />
+      </ThemeContext.Provider>
+    </GoogleOAuthProvider>
   );
 }
 
@@ -246,9 +249,11 @@ describe('KnowledgeScreen — AI 플래시카드 생성', () => {
 
   it('API 키 없을 때 AI 생성 버튼 비활성화', () => {
     render(
-      <ThemeContext.Provider value={{ T, F }}>
-        <KnowledgeScreen lang="ko" apiKeys={{}} currentBook={MOCK_BOOK} />
-      </ThemeContext.Provider>
+      <GoogleOAuthProvider clientId="test-client-id">
+        <ThemeContext.Provider value={{ T, F }}>
+          <KnowledgeScreen lang="ko" apiKeys={{}} currentBook={MOCK_BOOK} />
+        </ThemeContext.Provider>
+      </GoogleOAuthProvider>
     );
     clickTab('카드');
     const aiBtn = Array.from(document.querySelectorAll('button')).find(b => b.textContent.includes('AI 생성'));
@@ -320,9 +325,11 @@ describe('KnowledgeScreen — 어휘 탭', () => {
 
   it('API 키 없을 때 AI 어휘 추출 버튼 비활성화', () => {
     render(
-      <ThemeContext.Provider value={{ T, F }}>
-        <KnowledgeScreen lang="ko" apiKeys={{}} currentBook={MOCK_BOOK} />
-      </ThemeContext.Provider>
+      <GoogleOAuthProvider clientId="test-client-id">
+        <ThemeContext.Provider value={{ T, F }}>
+          <KnowledgeScreen lang="ko" apiKeys={{}} currentBook={MOCK_BOOK} />
+        </ThemeContext.Provider>
+      </GoogleOAuthProvider>
     );
     clickTab('어휘');
     const extractBtn = Array.from(document.querySelectorAll('button')).find(b => b.textContent.includes('AI 어휘 추출'));
@@ -345,9 +352,11 @@ describe('KnowledgeScreen — 어휘 탭', () => {
 describe('KnowledgeScreen — 영문(lang=en)', () => {
   it('탭 레이블이 영어로 표시됨', () => {
     render(
-      <ThemeContext.Provider value={{ T, F }}>
-        <KnowledgeScreen lang="en" apiKeys={API_KEYS} currentBook={MOCK_BOOK} />
-      </ThemeContext.Provider>
+      <GoogleOAuthProvider clientId="test-client-id">
+        <ThemeContext.Provider value={{ T, F }}>
+          <KnowledgeScreen lang="en" apiKeys={API_KEYS} currentBook={MOCK_BOOK} />
+        </ThemeContext.Provider>
+      </GoogleOAuthProvider>
     );
     expect(document.body.textContent).toContain('Notes');
     expect(document.body.textContent).toContain('Cards');
@@ -356,9 +365,11 @@ describe('KnowledgeScreen — 영문(lang=en)', () => {
 
   it('빈 상태 메시지가 영어로 표시됨', () => {
     render(
-      <ThemeContext.Provider value={{ T, F }}>
-        <KnowledgeScreen lang="en" apiKeys={API_KEYS} currentBook={MOCK_BOOK} />
-      </ThemeContext.Provider>
+      <GoogleOAuthProvider clientId="test-client-id">
+        <ThemeContext.Provider value={{ T, F }}>
+          <KnowledgeScreen lang="en" apiKeys={API_KEYS} currentBook={MOCK_BOOK} />
+        </ThemeContext.Provider>
+      </GoogleOAuthProvider>
     );
     expect(document.body.textContent).toContain('No entries yet');
   });
@@ -366,9 +377,11 @@ describe('KnowledgeScreen — 영문(lang=en)', () => {
   it('카드 탭의 AI Generate 버튼이 영어로 표시됨', () => {
     localStorage.setItem('pkl_book_index', JSON.stringify([{ id: 'book-test', title: 'Test Book' }]));
     render(
-      <ThemeContext.Provider value={{ T, F }}>
-        <KnowledgeScreen lang="en" apiKeys={API_KEYS} currentBook={MOCK_BOOK} />
-      </ThemeContext.Provider>
+      <GoogleOAuthProvider clientId="test-client-id">
+        <ThemeContext.Provider value={{ T, F }}>
+          <KnowledgeScreen lang="en" apiKeys={API_KEYS} currentBook={MOCK_BOOK} />
+        </ThemeContext.Provider>
+      </GoogleOAuthProvider>
     );
     clickTab('Cards');
     expect(document.body.textContent).toContain('AI Generate');
