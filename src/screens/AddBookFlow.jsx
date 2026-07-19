@@ -1,10 +1,11 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useTheme } from '../context.jsx';
 import { Icon } from '../components.jsx';
 import { addLocalBook, addLocalBooksNative, usesNativePicker } from '../utils/localBooks.js';
 import { DriveBookPicker } from '../components/DriveBookPicker.jsx';
 import { useGoogleAuth } from '../utils/useGoogleAuth.js';
 import { uploadBooksToDrive, PDF_UPLOAD_SCOPE } from '../utils/drivePdfUpload.js';
+import { getDriveToken } from '../utils/driveLocalCopy.js';
 import { showToast } from '../utils/toast.js';
 
 /* ════════════════════════════════════════════════════════════════
@@ -15,13 +16,18 @@ import { showToast } from '../utils/toast.js';
 
 export function AddBookFlow({ lang, onCancel, onComplete, userConfig, onUpdateConfig }) {
   const { T, F } = useTheme();
-  const [step, setStep] = useState("source"); // source | drivePicker | driveOffer
+  const [step, setStep] = useState("source"); // source | drivePicker | driveOffer | driveAuto
   const [importing, setImporting] = useState(false);
   const [addedBooks, setAddedBooks] = useState([]);   // 방금 추가한 로컬 책들(업로드 제안 대상)
   const fileInputRef = useRef(null);
 
-  // 로컬 추가 완료 → Drive 업로드 제안 스텝으로
-  const offerUpload = (books) => { setAddedBooks(books); setStep("driveOffer"); };
+  // 로컬 추가 완료 → "항상 자동 업로드" 설정 + 유효 토큰이 있으면 묻지 않고 조용히 업로드,
+  // 아니면 기존처럼 업로드 제안 화면으로.
+  const offerUpload = (books) => {
+    setAddedBooks(books);
+    if (userConfig?.autoUploadPdf && getDriveToken()) setStep("driveAuto");
+    else setStep("driveOffer");
+  };
 
   // 실제 로컬 PDF 가져오기 — Electron/Capacitor(네이티브 선택) / 웹(file input)
   const handleImportPdf = async () => {
@@ -54,11 +60,22 @@ export function AddBookFlow({ lang, onCancel, onComplete, userConfig, onUpdateCo
     }
   };
 
+  if (step === "driveAuto") {
+    return (
+      <DriveAutoUpload
+        lang={lang}
+        books={addedBooks}
+        onDone={() => onComplete && onComplete(addedBooks[0])}
+      />
+    );
+  }
   if (step === "driveOffer") {
     return (
       <DriveUploadOffer
         lang={lang}
         books={addedBooks}
+        userConfig={userConfig}
+        onUpdateConfig={onUpdateConfig}
         onDone={() => onComplete && onComplete(addedBooks[0])}
       />
     );
@@ -120,17 +137,69 @@ export function AddBookFlow({ lang, onCancel, onComplete, userConfig, onUpdateCo
   );
 }
 
-/* ── Drive 업로드 제안 — 로컬 추가 직후 원본 PDF 를 MyLibrary/books/ 로 백업 ── */
-function DriveUploadOffer({ lang, books, onDone }) {
+/* ── 조용한 자동 업로드 — "항상 자동 업로드" 설정 + 유효 토큰이 있을 때, 팝업 없이
+   바로 업로드하고 짧게 결과만 보여준 뒤 서재로 넘어간다(실패해도 로컬 추가는 유지). ── */
+function DriveAutoUpload({ lang, books, onDone }) {
+  const { T, F } = useTheme();
+  const ko = lang === 'ko';
+  const [result, setResult] = useState(null); // {done,failed,total} | 'error' | null(진행 중)
+
+  useEffect(() => {
+    let alive = true;
+    const token = getDriveToken();
+    if (!token) { setResult('error'); return; }
+    uploadBooksToDrive(token, books)
+      .then(res => { if (alive) setResult(res); })
+      .catch(() => { if (alive) setResult('error'); });
+    return () => { alive = false; };
+  }, []); // books 는 마운트 시 1회 스냅샷
+
+  useEffect(() => {
+    if (result === null) return;
+    const id = setTimeout(onDone, result === 'error' ? 900 : 1100);
+    return () => clearTimeout(id);
+  }, [result]);
+
+  return (
+    <div style={{ position: "absolute", inset: "44px 0 0 0", background: T.bg, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 24 }}>
+      <div style={{ width: "100%", maxWidth: 380, background: T.surface, borderRadius: 18, border: `1px solid ${T.border}`, padding: "26px 24px", textAlign: "center", boxShadow: `0 8px 30px -14px ${T.ink}44` }}>
+        <div style={{ fontSize: 34 }}>{result && result !== 'error' ? '✅' : '☁️'}</div>
+        <div style={{ fontSize: 15.5, fontWeight: 700, color: T.ink, fontFamily: F.display, marginTop: 12 }}>
+          {result === null
+            ? (ko ? 'Drive에 자동 업로드 중…' : 'Auto-uploading to Drive…')
+            : result === 'error'
+              ? (ko ? '자동 업로드를 건너뛰었어요' : 'Auto-upload skipped')
+              : (ko ? '업로드 완료' : 'Upload complete')}
+        </div>
+        {result && result !== 'error' && (
+          <div style={{ fontSize: 12.5, color: T.inkMid, fontFamily: F.body, lineHeight: 1.6, marginTop: 8 }}>
+            {ko
+              ? `${result.done}권 업로드${result.failed ? ` · ${result.failed}권 실패` : ''} → MyLibrary/books/`
+              : `${result.done} uploaded${result.failed ? ` · ${result.failed} failed` : ''} → MyLibrary/books/`}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ── Drive 업로드 제안 — 로컬 추가 직후 원본 PDF 를 MyLibrary/books/ 로 백업.
+   "항상 자동으로 업로드"를 체크하면 다음부터는 묻지 않고 조용히 업로드된다
+   (DriveAutoUpload 로 분기, userConfig.autoUploadPdf). ── */
+function DriveUploadOffer({ lang, books, userConfig, onUpdateConfig, onDone }) {
   const { T, F } = useTheme();
   const ko = lang === 'ko';
   const [status, setStatus] = useState('offer'); // offer | uploading | done | error
   const [progress, setProgress] = useState('');
   const [result, setResult] = useState(null);
+  const [alwaysAuto, setAlwaysAuto] = useState(false);
 
   const startUpload = useGoogleAuth({
     scope: PDF_UPLOAD_SCOPE,
     onSuccess: async ({ access_token }) => {
+      if (alwaysAuto && onUpdateConfig) {
+        onUpdateConfig({ ...(userConfig || {}), autoUploadPdf: true });
+      }
       setStatus('uploading');
       try {
         const res = await uploadBooksToDrive(access_token, books, {
@@ -164,6 +233,10 @@ function DriveUploadOffer({ lang, books, onDone }) {
             <div style={{ marginTop: 10, fontSize: 11.5, color: T.inkLight, fontFamily: F.body, lineHeight: 1.5, maxHeight: 66, overflowY: 'auto' }}>
               {books.slice(0, 3).map(b => `《${b.title}》`).join(' · ')}{books.length > 3 ? ` ${ko ? '외' : '+'} ${books.length - 3}` : ''}
             </div>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 14, fontSize: 12, color: T.inkMid, fontFamily: F.body, cursor: 'pointer', justifyContent: 'center' }}>
+              <input type="checkbox" checked={alwaysAuto} onChange={e => setAlwaysAuto(e.target.checked)} style={{ width: 14, height: 14, accentColor: T.accent, cursor: 'pointer' }} />
+              {ko ? '다음부터 묻지 않고 항상 자동 업로드' : 'Always auto-upload from now on'}
+            </label>
             <button
               onClick={startUpload}
               style={{ marginTop: 16, width: '100%', padding: '12px 0', borderRadius: 12, border: 'none', background: T.accent, color: '#FFF', fontSize: 13.5, fontWeight: 700, fontFamily: F.body, cursor: 'pointer' }}

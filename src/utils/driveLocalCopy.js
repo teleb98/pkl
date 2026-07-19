@@ -8,7 +8,8 @@ import { isElectron } from './localBooks.js';
 import { getCachedPdf, cachePdf, downloadWithProgress } from './pdfCache.js';
 import { setBookMeta, getBookMeta } from '../store.js';
 
-function getDriveToken() {
+/** 저장된 Drive 토큰(만료 안 됐으면) — 여러 유틸이 pkl_config 에서 직접 읽던 걸 공용화 */
+export function getDriveToken() {
   try {
     const cfg = JSON.parse(localStorage.getItem('pkl_config') || 'null');
     const token = cfg?.driveAccessToken || cfg?.googleUser?.accessToken;

@@ -29,7 +29,7 @@ import { checkAndFireReminder } from './utils/readingReminder.js';
 import { getCacheInfo, clearAllCache, deleteCachedPdf } from './utils/pdfCache.js';
 
 /* ── Settings panel ───────────────────────────────────────────── */
-function SettingsPanel({ settings, setSettings, onClose, userConfig, onUpdateConfig }) {
+export function SettingsPanel({ settings, setSettings, onClose, userConfig, onUpdateConfig }) {
   const themeKey = settings.dark ? `${settings.theme}Dark` : settings.theme;
   const T = THEMES[themeKey] || THEMES.ember;
   const F = TYPE_PAIRS[settings.type] || TYPE_PAIRS.lora;
@@ -366,7 +366,21 @@ function SettingsPanel({ settings, setSettings, onClose, userConfig, onUpdateCon
                 {lang === 'ko' ? '해제' : 'Unlink'}
               </button>
             </div>
-          ) : (
+          ) : null}
+          {userConfig?.googleUser && (
+            <label style={{ display: 'flex', alignItems: 'center', gap: 9, marginTop: 10, padding: '9px 13px', cursor: 'pointer' }}>
+              <input
+                type="checkbox"
+                checked={!!userConfig?.autoUploadPdf}
+                onChange={e => onUpdateConfig && onUpdateConfig({ ...(userConfig || {}), autoUploadPdf: e.target.checked })}
+                style={{ width: 15, height: 15, accentColor: T.accent, cursor: 'pointer', flexShrink: 0 }}
+              />
+              <span style={{ fontSize: 12.5, color: T.inkMid, fontFamily: F.body }}>
+                {lang === 'ko' ? 'PDF 추가 시 Drive에 자동 업로드' : 'Auto-upload PDFs to Drive when added'}
+              </span>
+            </label>
+          )}
+          {!userConfig?.googleUser && (
             <button onClick={() => connectGoogle()} style={{ width: '100%', padding: '11px 14px', borderRadius: 12, border: `1.5px solid #4285F4`, background: T.surface, color: '#1A3F7B', fontSize: 13, fontWeight: 600, fontFamily: F.body, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
               <GoogleLogo size={16} />
               {lang === 'ko' ? 'Google 계정 연결' : 'Connect Google Account'}

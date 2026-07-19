@@ -14,10 +14,15 @@ vi.mock('../utils/drivePdfUpload.js', async (orig) => ({
   ...(await orig()),
   uploadBooksToDrive: vi.fn(),
 }));
+vi.mock('../utils/driveLocalCopy.js', async (orig) => ({
+  ...(await orig()),
+  getDriveToken: vi.fn(() => null),
+}));
 
 import { AddBookFlow } from '../screens/AddBookFlow.jsx';
 import { addLocalBook } from '../utils/localBooks.js';
 import { uploadBooksToDrive } from '../utils/drivePdfUpload.js';
+import { getDriveToken } from '../utils/driveLocalCopy.js';
 
 beforeEach(() => { localStorage.clear(); vi.clearAllMocks(); });
 
@@ -79,5 +84,51 @@ describe('AddBookFlow — Drive 업로드 제안', () => {
     expect(await screen.findByText(/업로드에 실패했어요/)).toBeInTheDocument();
     fireEvent.click(screen.getByText(/서재로 가기/));
     expect(onComplete).toHaveBeenCalled();
+  });
+
+  it('"항상 자동 업로드" 체크 후 업로드하면 autoUploadPdf 가 저장된다', async () => {
+    addLocalBook.mockResolvedValue({ id: 'b1', title: '나의책' });
+    uploadBooksToDrive.mockResolvedValue({ done: 1, failed: 0, total: 1 });
+    const onUpdateConfig = vi.fn();
+    const { container } = renderWithTheme(
+      <AddBookFlow lang="ko" onCancel={() => {}} onComplete={() => {}} userConfig={{}} onUpdateConfig={onUpdateConfig} />
+    );
+
+    pickWebPdf(container);
+    await screen.findByText(/1권을 서재에 추가했어요/);
+    fireEvent.click(screen.getByLabelText ? screen.getByLabelText(/항상 자동/) : screen.getByText(/항상 자동/));
+    fireEvent.click(screen.getByText(/Google Drive에 업로드/));
+
+    await waitFor(() => expect(onUpdateConfig).toHaveBeenCalledWith(expect.objectContaining({ autoUploadPdf: true })));
+  });
+});
+
+describe('AddBookFlow — 자동 업로드(설정 켜짐 + 토큰 있음)', () => {
+  it('묻지 않고 조용히 업로드한 뒤 서재로 이동한다', async () => {
+    addLocalBook.mockResolvedValue({ id: 'b1', title: '나의책' });
+    getDriveToken.mockReturnValue('saved-tok');
+    uploadBooksToDrive.mockResolvedValue({ done: 1, failed: 0, total: 1 });
+    const onComplete = vi.fn();
+    const { container } = renderWithTheme(
+      <AddBookFlow lang="ko" onCancel={() => {}} onComplete={onComplete} userConfig={{ autoUploadPdf: true }} onUpdateConfig={() => {}} />
+    );
+
+    pickWebPdf(container);
+    // 제안 화면 없이 바로 자동 업로드 화면
+    expect(await screen.findByText(/자동 업로드 중|업로드 완료/)).toBeInTheDocument();
+    expect(screen.queryByText('건너뛰기')).toBeNull();
+    await waitFor(() => expect(uploadBooksToDrive).toHaveBeenCalledWith('saved-tok', [{ id: 'b1', title: '나의책' }]));
+    await waitFor(() => expect(onComplete).toHaveBeenCalledWith({ id: 'b1', title: '나의책' }), { timeout: 2000 });
+  });
+
+  it('설정은 켜져 있어도 토큰이 없으면 일반 제안 화면으로', async () => {
+    addLocalBook.mockResolvedValue({ id: 'b1', title: '나의책' });
+    getDriveToken.mockReturnValue(null);
+    const { container } = renderWithTheme(
+      <AddBookFlow lang="ko" onCancel={() => {}} onComplete={() => {}} userConfig={{ autoUploadPdf: true }} onUpdateConfig={() => {}} />
+    );
+
+    pickWebPdf(container);
+    expect(await screen.findByText('건너뛰기')).toBeInTheDocument();
   });
 });
