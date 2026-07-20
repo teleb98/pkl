@@ -6,6 +6,8 @@ import { THEMES, TYPE_PAIRS } from './data.js';
 import { TabBar, Icon } from './components.jsx';
 import { Toaster } from './components/Toast.jsx';
 import { FamilySwitcher } from './components/FamilySwitcher.jsx';
+import { PlanSheet } from './components/PlanSheet.jsx';
+import { PLANS, getPlan } from './utils/plan.js';
 import { readRbSession, clearRbCookie, hubLoginUrl, hubLogoutUrl } from './utils/rarebookSso.js';
 import { GoogleLogo } from './screens/OnboardingFlow.jsx';
 import { LibraryScreen } from './screens/LibraryScreen.jsx';
@@ -47,6 +49,7 @@ export function SettingsPanel({ settings, setSettings, onClose, userConfig, onUp
   const [showVision, setShowVision] = useState(false);
   const [saved, setSaved] = useState(false);
   const [keyTest, setKeyTest] = useState({});
+  const [showPlan, setShowPlan] = useState(false);
 
   // Drive folder picker state
   const [drivePicker, setDrivePicker] = useState('idle'); // idle | loading | picking | error
@@ -277,6 +280,24 @@ export function SettingsPanel({ settings, setSettings, onClose, userConfig, onUp
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18 }}>
           <span style={{ fontSize: 16, fontWeight: 700, color: T.ink, fontFamily: F.display }}>{lang === 'ko' ? '설정' : 'Settings'}</span>
           <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.inkMid, display: 'flex' }}><Icon name="close" size={18} color={T.inkMid} /></button>
+        </div>
+
+        {/* Plan */}
+        <div style={{ marginBottom: 16 }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: T.inkLight, letterSpacing: 1.2, textTransform: 'uppercase', fontFamily: F.body, marginBottom: 8 }}>{lang === 'ko' ? '플랜' : 'Plan'}</div>
+          <button onClick={() => setShowPlan(true)} style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, background: T.accentSoft, border: `1px solid ${T.accent}33`, borderRadius: 12, padding: '11px 14px', cursor: 'pointer', textAlign: 'left' }}>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, fontFamily: F.body }}>
+                {PLANS[getPlan(userConfig)].name}{getPlan(userConfig) === 'free' ? '' : ' ✦'}
+              </div>
+              <div style={{ fontSize: 11, color: T.inkLight, fontFamily: F.body, marginTop: 1 }}>
+                {getPlan(userConfig) === 'free'
+                  ? (lang === 'ko' ? '서재 Pro 보기 · 키 없이 rarebook AI' : 'See Library Pro')
+                  : (lang === 'ko' ? '프리미엄 이용 중' : 'Premium active')}
+              </div>
+            </div>
+            <span style={{ fontSize: 11.5, fontWeight: 700, color: T.accent, fontFamily: F.body, flexShrink: 0 }}>{lang === 'ko' ? '보기 →' : 'View →'}</span>
+          </button>
         </div>
 
         {/* Theme */}
@@ -777,6 +798,10 @@ export function SettingsPanel({ settings, setSettings, onClose, userConfig, onUp
           </button>
         </div>
       </div>
+
+      {showPlan && (
+        <PlanSheet lang={lang} userConfig={userConfig} onUpdateConfig={onUpdateConfig} onClose={() => setShowPlan(false)} />
+      )}
     </div>
   );
 }
